@@ -912,3 +912,94 @@ reescribir todo: le muestra qué pasó y le da la decisión.
 - PENDIENTE: la escalera con tiempos (5 min → reinicio → 5 min → portal), el disparador
   de reinicio por tiempo, y el portal con contexto (mensaje "no encuentro la red" +
   conservar credenciales + opciones reintentar/mantener/cambiar).
+
+---
+
+## MIGRACIÓN DE SERVIDOR — fileserver.locker → api.xami.run (HECHO 2026-06-10)
+
+Migración con corte (el viejo ya no se usa). Nueva infraestructura:
+
+| Pieza | Antes | Ahora |
+|-------|-------|-------|
+| Dominio API | fileserver.locker/serverHSM/api | **https://api.xami.run** |
+| Path en disco | /home/fileserver/public_html/serverHSM | /home/xami/public_html/api |
+| Usuario | fileserver | xami |
+| systemd service | minihsm-optimizer (puerto 8181) | **xami-optimizer** (puerto 8182) |
+| Proxy Apache | serverHSM.conf | userdata/.../xami/api.xami.run/optimizer.conf |
+| Cuenta cPanel | fileserver | xami (grupo xami) |
+
+Pasos ejecutados:
+1. Copiado repo + .env (chmod 600) a /home/xami/public_html/api, ownership xami:xami
+2. venv RECREADO (no copiado, por rutas absolutas) con Python 3.11.9 + deps exactas
+3. Service xami-optimizer.service creado (user xami, puerto 8182, EnvironmentFile .env)
+4. Proxy Apache api.xami.run/ → 127.0.0.1:8182 (excluye /.well-known para SSL)
+5. Firmware actualizado: CONFIG_SERVERHSM_URL = https://api.xami.run (3 archivos)
+6. Portal WiFi muestra el dominio api.xami.run en el header
+7. Viejo service detenido y deshabilitado (no borrado, queda como respaldo)
+
+Ruta del heartbeat conservada: firmware arma <url>/devices/heartbeat → el router
+del optimizer tiene prefix /devices. Verificado: responde 422 (espera datos) = ruta OK.
+
+NOTA: la llave de deploy de git sigue en /home/manyao/.ssh/minihsm_github. El push
+desde el repo de xami se hace con esa llave (vía sudo) + safe.directory para root.
+
+### Pendiente de la migración
+- Borrar el código viejo en /home/fileserver/public_html/serverHSM cuando se confirme
+  que api.xami.run funciona 100% con el dispositivo real (reflasheo + heartbeat).
+- Reflashear el dispositivo con el firmware nuevo (apunta a api.xami.run) y validar
+  que el heartbeat llega al nuevo server.
+
+### Bugs preexistentes detectados durante la migración (no de la migración)
+- `/health` del optimizer se cuelga si el device no está accesible (timeout largo en
+  get_client().health()). Debería tener timeout corto y responder igual.
+- `/openapi.json` da error 500: pydantic `LoadCertRequest is not fully defined`
+  (falta un .model_rebuild() o el forward ref del modelo). Afecta /docs schema.
+
+---
+
+## BLOQUE 6 — Auditoría persistente, robusta y atestada (diseño)
+
+> Diseñado en conversación, formalizado aquí. PENDIENTE de implementar.
+
+### Estado actual del /audit
+- Buffer circular en RAM de solo 64 entradas (AUDIT_LOG_SIZE=64).
+- Cada entrada firmada individualmente por el device.
+- Campos: ts (relativo, no UTC), op, reqId, result, deviceId, sig.
+
+### Carencias detectadas
+1. **Persistencia:** está en RAM → se pierde al reiniciar. Un atacante podría reiniciar
+   para borrar el rastro.
+2. **Capacidad:** solo 64 entradas → la 65a borra la 1a. Fácil de saturar.
+3. **Timestamp relativo:** ts viene de esp_timer (desde el arranque), no es hora real.
+   Se arregla con NTP (Bloque 0/1).
+
+### Mejoras de diseño (aportadas en conversación)
+1. **Firmar el LOG COMPLETO al consultarlo** (no solo cada entrada). Cierra el fraude
+   por OMISIÓN: si alguien quita entradas, la firma del conjunto se rompe. El Xami
+   certifica "este es el log completo que te entrego, en este momento".
+2. **Cursor por fecha:** si el cliente manda una fecha → devuelve desde ahí. Si no
+   manda nada → devuelve el último tramo. Paginación para el log rotativo.
+3. **Canonicalización:** firmar el hash del log con formato estándar (quitar espacios,
+   orden fijo) tipo JCS/RFC 8785, para que el verificador reproduzca el mismo hash.
+
+### Atestación del log (aporte adicional)
+La firma del conjunto debe incluir, para ser inequívoca y no reusable:
+- hash del conjunto de entradas devueltas
+- rango cubierto (from/to)
+- momento de la atestación (timestamp UTC)
+- opcional: nonce/challenge del que consulta (anti-reuso)
+
+Estructura propuesta:
+```json
+{
+  "log": { "from","to","count","entries":[...con firma individual...] },
+  "attestation": { "device","issuedAt","logHash","signature" }
+}
+```
+Dos niveles de firma: cada entrada (integridad individual) + el conjunto (integridad
+y completitud). Se integra con el sellado stamping.io (Bloque 7): la atestación del
+log se sella en blockchain.
+
+### Integración con Bloque 5 (anti-replay)
+El buffer anti-replay del KUser (10000 hashes rotativos) tiene el MISMO problema de
+persistencia. Misma solución: persistir en NVS. Reservar partición (~320KB).
