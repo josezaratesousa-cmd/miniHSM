@@ -654,3 +654,36 @@ incluido. El resto de campos de la respuesta (version, server, quantity...) NO i
 
 Naturaleza: el sello es una PRUEBA DIFERIDA Y RECONSTRUIBLE. Meses después, con esas
 coordenadas → CID → Merkle tree en IPFS → prueba matemática de inclusión.
+
+### CORRECCIÓN IMPORTANTE — El Xami NO almacena el sello, solo lo RESPONDE
+Rol del Xami respecto al sello (decisión de arquitectura):
+- El Xami **atesta** (manda el evidence a stamping.io a sellar)
+- **Confía** en que stamping.io hará su trabajo (anclar en blockchain)
+- **Entrega las coordenadas del sello en la respuesta** (trxid, recipient, blockhash,
+  nonce, timestamp) al que preguntó, en ese mismo momento
+- **NO almacena NADA — ni el trxid.** Es stateless respecto al sello.
+
+Por qué es lo correcto: el Xami NO debe ser la fuente de verdad de su propia prueba.
+- No puede falsificar la prueba (no la custodia)
+- No puede borrar la prueba (no la tiene)
+- La prueba existe independientemente del Xami (en blockchain + IPFS via stamping.io)
+- El verificador valida contra stamping.io/blockchain, SIN depender del Xami
+
+La CUSTODIA de la prueba es del VERIFICADOR, no del Xami. El Xami transmite y olvida.
+La memoria de la prueba vive en blockchain.
+
+Implicaciones (simplifica):
+- No persistir sellos (ni en miniHSM ni en serverHSM) → menos storage, menos código
+- Flujo stateless: pides info → Xami atesta → responde con sello → fin
+- Cada respuesta lleva su atestación FRESCA (pedir el log mañana = sello nuevo)
+- El verificador guarda el bloque "stamping" que le importe, si quiere validar luego
+
+Estructura de respuesta (data + attestation firmada + stamping, todo al vuelo):
+```json
+{
+  "data": { ...log o device... },
+  "attestation": { "device","issuedAt","hash","signature" },
+  "stamping": { "trxid","recipient","blockhash","nonce","timestamp" }
+}
+```
+Esto REEMPLAZA la nota anterior de "guardar las coordenadas". El Xami NO guarda.
