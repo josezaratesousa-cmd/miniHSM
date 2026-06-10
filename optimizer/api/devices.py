@@ -102,8 +102,8 @@ def get_device(device_id: str):
 
 # ── Emparejamiento (match) — Bloque 9 ─────────────────────────────────────────
 
-from minihsm import sold_devices
-from minihsm.crypto_match import verify_proof_of_possession
+from minihsm import sold_devices, device_secrets
+from minihsm.crypto_match import verify_proof_of_possession, ecies_encrypt
 
 
 class MatchRequest(BaseModel):
@@ -117,10 +117,10 @@ class MatchRequest(BaseModel):
 
 
 class MatchResponse(BaseModel):
-    status:    str
-    deviceId:  str
-    message:   str
-    # secretsEncrypted se agrega en Capa 2 (ECIES)
+    status:          str
+    deviceId:        str
+    message:         str
+    secretsEncrypted: str   # blob ECIES (hex): contiene el HMAC secret cifrado con la pubkey del device
 
 
 @router.post("/match", response_model=MatchResponse)
@@ -162,9 +162,15 @@ def match(req: Request, body: MatchRequest):
           or req.client.host)
     registry.register(device_id=body.deviceId, ip=ip)
 
-    log.info(f"Match OK: {body.deviceId} @ {ip} (model={body.model})")
+    # 5. Generar el HMAC secret (32 bytes), guardarlo, y cifrarlo con ECIES para el device
+    hmac_secret = device_secrets.generate_hmac_secret()
+    device_secrets.set_secret(body.deviceId, hmac_secret.hex())
+    blob = ecies_encrypt(body.pubkey, hmac_secret)
+
+    log.info(f"Match OK: {body.deviceId} @ {ip} (model={body.model}) - secret entregado")
     return MatchResponse(
-        status   = "ok",
-        deviceId = body.deviceId,
-        message  = "matched (Capa 1: identidad verificada; secretos en Capa 2)",
+        status           = "ok",
+        deviceId         = body.deviceId,
+        message          = "matched - secret entregado cifrado",
+        secretsEncrypted = blob,
     )

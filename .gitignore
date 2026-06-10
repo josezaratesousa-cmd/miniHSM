@@ -9,3 +9,4 @@ __pycache__/
 dist/
 .venv/
 optimizer/minihsm/sold_devices.json
+optimizer/minihsm/device_secrets.json
