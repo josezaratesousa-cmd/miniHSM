@@ -864,3 +864,51 @@ flag `s_connected_once`:
   mini se recupera solo, sin reiniciar.
 - No bloquea el event loop (reconexión inmediata vía el ciclo de eventos, sin delays).
 - Log cada 10 intentos para no saturar consola.
+
+---
+
+## DISEÑO — Recuperación de red completa (escalera + portal con contexto)
+
+> Amplía el fix básico de reconexión infinita (commit a20786a). PENDIENTE de implementar.
+
+### Escalera de recuperación
+```
+ARRANQUE (primera vez, SIN credenciales guardadas):
+  → portal VACÍO → usuario configura red + contraseña desde cero
+
+OPERACIÓN, pierde WiFi (YA tenía credenciales, la red EXISTE):
+  → desconecta limpio → reconecta
+  → reconexión INFINITA (nunca se rinde; la red existe, el router volverá)
+  → si persiste fallando (~5 min continuos): se REINICIA el dispositivo
+  → al arrancar, intenta conectar con las credenciales guardadas (~5 min)
+     → si conecta: opera normal
+     → si NO conecta: abre portal CON CONTEXTO
+```
+
+### Los DOS modos de portal (diferencia clave)
+La diferencia entre el portal del primer arranque y el que aparece después es
+**qué datos ya tiene el dispositivo** (puede o no cambiar las credenciales):
+
+**Portal primer arranque (sin credenciales):**
+- No hay red guardada. Portal vacío, configurar desde cero.
+- No hay nada que "mantener".
+
+**Portal tras perder red (con credenciales):**
+- Ya tiene una red guardada (ej. ATENEA).
+- Portal CON CONTEXTO: muestra "no encuentro tu red ATENEA".
+- **CONSERVA las credenciales (no las borra automáticamente).**
+- Ofrece al usuario: **reintentar / mantener / cambiar de red**.
+- Si elige mantener/reintentar → usa las que ya tiene (evita reescribir la clave
+  por un simple corte de luz).
+- Si elige cambiar → reemplaza las credenciales.
+
+### Principio
+El dispositivo se esfuerza al máximo por reconectarse solo (reconectar → reiniciar),
+y solo cuando de verdad no puede, pasa el control al usuario — pero sin hacerle
+reescribir todo: le muestra qué pasó y le da la decisión.
+
+### Estado actual
+- HECHO (commit a20786a): reconexión infinita en operación (no se rinde tras 5 intentos).
+- PENDIENTE: la escalera con tiempos (5 min → reinicio → 5 min → portal), el disparador
+  de reinicio por tiempo, y el portal con contexto (mensaje "no encuentro la red" +
+  conservar credenciales + opciones reintentar/mantener/cambiar).
