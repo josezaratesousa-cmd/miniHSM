@@ -37,6 +37,7 @@ static const char *op_to_str(audit_operation_t op)
         case AUDIT_OP_VERIFY: return "verify";
         case AUDIT_OP_HEALTH: return "health";
         case AUDIT_OP_DEVICE: return "device";
+        case AUDIT_OP_RECONFIG: return "reconfigure";
         default:              return "unknown";
     }
 }

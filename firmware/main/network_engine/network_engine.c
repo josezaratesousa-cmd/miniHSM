@@ -99,7 +99,7 @@ esp_err_t network_wifi_init(void)
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group,
         WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-        pdFALSE, pdFALSE, pdMS_TO_TICKS(10000));
+        pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
 
     return (bits & WIFI_CONNECTED_BIT) ? ESP_OK : ESP_FAIL;
 }
@@ -491,6 +491,7 @@ static esp_err_t handler_token(httpd_req_t *req)
 
 static esp_err_t handler_provision_wifi(httpd_req_t *req);
 static esp_err_t handler_provision_wifi_clear(httpd_req_t *req);
+static esp_err_t handler_provision_reconfigure(httpd_req_t *req);
 
 esp_err_t network_http_server_start(void)
 {
@@ -516,6 +517,7 @@ esp_err_t network_http_server_start(void)
         { .uri = "/token",  .method = HTTP_GET,  .handler = handler_token     },
         { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
         { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
+        { .uri = "/provision/reconfigure", .method = HTTP_POST, .handler = handler_provision_reconfigure },
     };
 
     for (size_t i = 0; i < sizeof(uris)/sizeof(uris[0]); i++)
@@ -604,3 +606,58 @@ static esp_err_t handler_provision_wifi_clear(httpd_req_t *req)
         "{\"status\":\"ok\",\"message\":\"WiFi credentials cleared from NVS\"}");
     return ESP_OK;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  POST /provision/reconfigure                                                 */
+/*  Reconfiguracion remota desde el serverHSM (con red activa).                 */
+/*  Requiere KUser valido. Borra credenciales y reinicia al portal Xami.        */
+/*  Queda registrado en auditoria quien lo solicito.                            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+static esp_err_t handler_provision_reconfigure(httpd_req_t *req)
+{
+    char body[256];
+    if (read_body(req, body, sizeof(body)) != ESP_OK) {
+        send_err(req, 400, "ERR001", "Invalid body");
+        return ESP_OK;
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) { send_err(req, 400, "ERR002", "JSON parse error"); return ESP_OK; }
+
+    const char *kuser   = cJSON_GetStringValue(cJSON_GetObjectItem(root, "kuser"));
+    const char *req_id  = cJSON_GetStringValue(cJSON_GetObjectItem(root, "requestId"));
+    cJSON      *ts_item = cJSON_GetObjectItem(root, "timestamp");
+    cJSON      *nc_item = cJSON_GetObjectItem(root, "nonce");
+
+    if (!kuser || !ts_item || !nc_item) {
+        cJSON_Delete(root);
+        audit_log(AUDIT_OP_RECONFIG, req_id ? req_id : "?", NULL, AUDIT_RESULT_DENIED);
+        send_err(req, 401, "ERR004", "Missing auth fields");
+        return ESP_OK;
+    }
+
+    int64_t ts        = (int64_t)cJSON_GetNumberValue(ts_item);
+    const char *nonce = cJSON_GetStringValue(nc_item);
+
+    if (policy_validate_token(kuser, ts, nonce) != ESP_OK) {
+        cJSON_Delete(root);
+        audit_log(AUDIT_OP_RECONFIG, req_id ? req_id : "?", NULL, AUDIT_RESULT_DENIED);
+        send_err(req, 401, "ERR005", "Invalid or expired token");
+        return ESP_OK;
+    }
+
+    /* Token valido: registrar y proceder */
+    audit_log(AUDIT_OP_RECONFIG, req_id ? req_id : "?", NULL, AUDIT_RESULT_OK);
+    cJSON_Delete(root);
+
+    ESP_LOGW(TAG, "Reconfiguracion remota solicitada — entrando al portal Xami en 3s");
+    send_json(req, 200,
+        "{\"status\":\"ok\",\"message\":\"Entrando en modo configuracion Xami en 3 segundos\"}");
+
+    /* Borrar credenciales y reiniciar: al no haber WiFi, main.c levanta el portal */
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    wifi_provision_clear();
+    esp_restart();
+    return ESP_OK;
+}
+

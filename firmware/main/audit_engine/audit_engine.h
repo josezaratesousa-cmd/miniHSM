@@ -8,6 +8,7 @@ typedef enum {
     AUDIT_OP_VERIFY  = 1,
     AUDIT_OP_HEALTH  = 2,
     AUDIT_OP_DEVICE  = 3,
+    AUDIT_OP_RECONFIG = 4,
 } audit_operation_t;
 
 typedef enum {
