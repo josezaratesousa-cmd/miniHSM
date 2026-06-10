@@ -403,3 +403,35 @@ pasaron el filtro barato.
 - HMAC solo: rápido, pero autorización = "confía en que validé"
 - VaultStamping solo: demostrable, pero caro y sin protección de transporte/replay
 - Ambos: cada uno hace lo que mejor hace
+
+---
+
+## ACTUALIZACIÓN — Decisiones tomadas (sesión 2026-06-10, parte 2)
+
+### Autenticación vs Autorización (terminología clarificada)
+- **HMAC = autenticación:** demuestra QUIÉN manda el request (el serverHSM legítimo,
+  que conoce el secret). Prueba de identidad del emisor.
+- **VaultStamping/KUser = autorización:** demuestra que ese request tiene PERMISO para
+  firmar ESE digest (el permiso descifrado lo dice). "Alguien le dio la llave."
+- El miniHSM valida ambas antes de firmar: 1) ¿te reconozco? 2) ¿tienes permiso?
+
+### GET /token ELIMINADO (hecho — commit e7095f0)
+- Era puerta trasera: regalaba HMAC válido sin autenticar.
+- Decisión: el server SIEMPRE genera el token, el dispositivo SOLO valida.
+- El optimizer (client.py) YA tiene la generación: HMAC-SHA256("minihsm:{ts}:{nonce}", secret).
+- Cálculo idéntico firmware ↔ server, ya verificado.
+- Nota: `policy_generate_token` queda en el firmware pero ya no se expone a la red.
+
+### NUEVO PENDIENTE CRÍTICO — Provisioning del secret HMAC
+El secret se genera aleatorio en el dispositivo (primer boot). El server necesita ESE
+mismo secret para generar tokens válidos. Problema: hoy existe `policy_get_secret_hex`
+que podría exponerse por la red = OTRA puerta trasera (exponer el secret es tan malo
+como regalar tokens).
+- **A resolver:** cómo se comparte el secret de forma segura dispositivo ↔ server.
+- Ideal: en fábrica/provisioning, NO por la red en producción.
+- Revisar si hay endpoint que expone el secret y quitarlo también.
+
+### Modelo de operación (decisión abierta)
+¿Todas las firmas exigen 2 capas (HMAC+VaultStamping), o hay operaciones de solo-HMAC
+y otras de alto valor con ambas? Recomendado: Modelo B (dos niveles), VaultStamping
+solo para alto valor / no-repudio auditable.
