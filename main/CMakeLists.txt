@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "crypto_engine/crypto_engine.c"
+        "vault_manager/vault_manager.c"
+        "cert_manager/cert_manager.c"
+        "policy_engine/policy_engine.c"
+        "audit_engine/audit_engine.c"
+        "network_engine/network_engine.c"
+    INCLUDE_DIRS
+        "."
+        "crypto_engine"
+        "vault_manager"
+        "cert_manager"
+        "policy_engine"
+        "audit_engine"
+        "network_engine"
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_http_server
+        esp_timer
+        mbedtls
+        espressif__cjson
+)

@@ -1,0 +1,10 @@
+build/
+sdkconfig
+managed_components/
+.DS_Store
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+.venv/
