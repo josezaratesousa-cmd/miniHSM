@@ -1,70 +1,93 @@
 """
-Optimizer API — FastAPI
-Expone endpoints de alto nivel para firmar documentos usando el MiniHSM.
+ServerHSM Optimizer — FastAPI
 """
 
 import hashlib
-import base64
-from pathlib import Path
+import logging
+import os
 from typing import Optional
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from minihsm.client import MiniHSMClient
+from minihsm.registry import registry
 from signing.pades import sign_pdf
 from signing.xades import sign_xml
 from signing.cades import sign_data, verify_cades
+from api.devices import router as devices_router
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("serverHSM")
 
 # ── Config ────────────────────────────────────────────────────────────────────
-
-import os
-MINIHSM_HOST   = os.getenv("MINIHSM_HOST",   "192.168.1.100")
+MINIHSM_HOST   = os.getenv("MINIHSM_HOST",   "")
 MINIHSM_PORT   = int(os.getenv("MINIHSM_PORT", "80"))
-MINIHSM_SECRET = os.getenv("MINIHSM_SECRET", "")  # hex del HMAC secret
+MINIHSM_SECRET = os.getenv("MINIHSM_SECRET", "")
+MINIHSM_DEVICE = os.getenv("MINIHSM_DEVICE", "")  # deviceId fijo (opcional)
 
 app = FastAPI(
-    title       = "MiniHSM Optimizer",
-    description = "Servicio de firma digital usando MiniHSM ESP32-S3",
+    title       = "ServerHSM Optimizer",
+    description = "Servicio de firma digital usando miniHSM ESP32-S3",
     version     = "2.0.0",
+    root_path   = "/serverHSM/api",
 )
+
+app.include_router(devices_router)
 
 
 def get_client() -> MiniHSMClient:
-    client = MiniHSMClient(MINIHSM_HOST, MINIHSM_PORT)
+    """
+    Obtiene el cliente HTTP para el miniHSM.
+    Prioridad:
+      1. IP del registro (heartbeat dinámico)
+      2. MINIHSM_HOST del .env (IP fija configurada)
+    """
+    host = MINIHSM_HOST
+
+    # Si hay un deviceId configurado, usar la IP del registro
+    if MINIHSM_DEVICE:
+        url = registry.get_url(MINIHSM_DEVICE)
+        if url:
+            entry = registry.get(MINIHSM_DEVICE)
+            host  = entry.ip
+            log.debug(f"Using registered IP for {MINIHSM_DEVICE}: {host}")
+        elif not host:
+            raise HTTPException(
+                503,
+                detail={
+                    "error":   "miniHSM unreachable",
+                    "message": "No heartbeat received yet. "
+                               "The miniHSM will register its IP in the next 5 minutes.",
+                    "deviceId": MINIHSM_DEVICE,
+                }
+            )
+
+    if not host:
+        raise HTTPException(
+            503,
+            detail="MINIHSM_HOST not configured and no device registered"
+        )
+
+    client = MiniHSMClient(host, MINIHSM_PORT)
     if MINIHSM_SECRET:
         client.set_secret(MINIHSM_SECRET)
     return client
 
 
-# ── Modelos ───────────────────────────────────────────────────────────────────
-
-class DigestSignRequest(BaseModel):
-    digest_hex: str
-    request_id: Optional[str] = None
-
-class DigestSignResponse(BaseModel):
-    request_id:     str
-    signature_hex:  str
-    certificate_pem:str
-    device_id:      str
-    algorithm:      str = "ECDSA-P256-SHA256-DER"
-
-class LoadCertRequest(BaseModel):
-    certificate_pem: str
-
-
-# ── Endpoints generales ───────────────────────────────────────────────────────
+# ── Health / Device ────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
+    online = registry.online_devices()
+    result = {"optimizer": "ok", "registeredDevices": len(online)}
     try:
-        client = get_client()
-        device = client.health()
-        return {"optimizer": "ok", "device": device}
+        result["miniHSM"] = get_client().health()
     except Exception as e:
-        raise HTTPException(502, f"Cannot reach MiniHSM: {e}")
+        result["miniHSM"] = {"error": str(e)}
+    return result
 
 @app.get("/device")
 def device_info():
@@ -76,68 +99,59 @@ def get_cert():
 
 @app.get("/csr")
 def get_csr():
-    """Obtiene el CSR para enviarlo a una CA."""
     return {"csr_pem": get_client().get_csr_pem()}
 
 @app.post("/cert")
-def load_ca_cert(req: LoadCertRequest):
-    """Carga el certificado firmado por la CA tras la ceremonia."""
+def load_ca_cert(req: "LoadCertRequest"):
     ok = get_client().load_ca_certificate(req.certificate_pem)
     if not ok:
         raise HTTPException(400, "Certificate rejected by device")
     return {"status": "PROVISIONED"}
 
 
-# ── Firma de digest (cualquier tipo) ─────────────────────────────────────────
+# ── Modelos ───────────────────────────────────────────────────────────────────
 
-@app.post("/sign/digest", response_model=DigestSignResponse)
+class DigestSignRequest(BaseModel):
+    digest_hex: str
+    request_id: Optional[str] = None
+
+class LoadCertRequest(BaseModel):
+    certificate_pem: str
+
+
+# ── Firma digest ──────────────────────────────────────────────────────────────
+
+@app.post("/sign/digest")
 def sign_digest(req: DigestSignRequest):
-    """
-    Firma un digest SHA-256 directamente.
-    Usar cuando el Optimizer externo ya calculó el hash.
-    """
     if len(req.digest_hex) != 64:
         raise HTTPException(400, "digest_hex must be 64 hex chars")
     result = get_client().sign(req.digest_hex, req.request_id)
-    return DigestSignResponse(
-        request_id      = result.request_id,
-        signature_hex   = result.signature_hex,
-        certificate_pem = result.certificate_pem,
-        device_id       = result.device_id,
-    )
+    return {
+        "requestId":      result.request_id,
+        "signatureHex":   result.signature_hex,
+        "certificatePem": result.certificate_pem,
+        "deviceId":       result.device_id,
+        "algorithm":      "ECDSA-P256-SHA256-DER",
+    }
 
 
-# ── PAdES — firma de PDF ──────────────────────────────────────────────────────
+# ── PAdES ─────────────────────────────────────────────────────────────────────
 
 @app.post("/sign/pdf")
 async def sign_pdf_endpoint(
     file:     UploadFile = File(...),
-    reason:   str        = Form("Firma electronica MiniHSM"),
+    reason:   str        = Form("Firma electronica ServerHSM"),
     location: str        = Form("Peru"),
     tsa_url:  str        = Form(None),
 ):
-    """
-    Firma un PDF con PAdES-B-B.
-    Sube el PDF como multipart/form-data, recibe el PDF firmado.
-    """
     pdf_bytes = await file.read()
-    in_path   = Path(f"/tmp/minihsm_in_{file.filename}")
-    out_path  = Path(f"/tmp/minihsm_out_{file.filename}")
-
+    in_path   = Path(f"/tmp/hsm_in_{file.filename}")
+    out_path  = Path(f"/tmp/hsm_out_{file.filename}")
     in_path.write_bytes(pdf_bytes)
-
     try:
-        sign_pdf(
-            pdf_path    = in_path,
-            output_path = out_path,
-            client      = get_client(),
-            reason      = reason,
-            location    = location,
-            tsa_url     = tsa_url,
-        )
-        signed_bytes = out_path.read_bytes()
+        sign_pdf(in_path, out_path, get_client(), reason, location, tsa_url)
         return Response(
-            content      = signed_bytes,
+            content      = out_path.read_bytes(),
             media_type   = "application/pdf",
             headers      = {"Content-Disposition":
                             f'attachment; filename="signed_{file.filename}"'},
@@ -147,16 +161,10 @@ async def sign_pdf_endpoint(
         out_path.unlink(missing_ok=True)
 
 
-# ── XAdES — firma de XML / facturas ──────────────────────────────────────────
+# ── XAdES ─────────────────────────────────────────────────────────────────────
 
 @app.post("/sign/xml")
-async def sign_xml_endpoint(
-    file: UploadFile = File(...),
-):
-    """
-    Firma un XML con XAdES-BES (compatible SUNAT Peru).
-    Sube el XML, recibe el XML firmado.
-    """
+async def sign_xml_endpoint(file: UploadFile = File(...)):
     xml_bytes = await file.read()
     signed    = sign_xml(xml_bytes, get_client())
     return Response(
@@ -167,26 +175,22 @@ async def sign_xml_endpoint(
     )
 
 
-# ── CAdES — firma de datos genéricos ─────────────────────────────────────────
+# ── CAdES ─────────────────────────────────────────────────────────────────────
 
 @app.post("/sign/data")
 async def sign_data_endpoint(
     file:     UploadFile = File(...),
     detached: bool       = Form(True),
 ):
-    """
-    Firma datos arbitrarios con CAdES-BES.
-    Devuelve el contenedor CMS/PKCS#7 en DER.
-    """
     data   = await file.read()
     signed = sign_data(data, get_client(), detached=detached)
     return Response(
         content    = signed,
         media_type = "application/pkcs7-signature",
-        headers    = {"Content-Disposition": "attachment; filename=\"signature.p7s\""},
+        headers    = {"Content-Disposition": 'attachment; filename="signature.p7s"'},
     )
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8181)
