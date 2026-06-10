@@ -843,3 +843,24 @@ plus de Xami de regalo.
 3. signature_appearance formato UANATACA adoptado tal cual.
 4. Flujo async job/result replicado (la firma puede tardar, habla con device físico).
 5. attestation + zkproof en toda respuesta de firma.
+
+---
+
+## BUG ENCONTRADO Y CORREGIDO — Reconexión WiFi (commit a20786a)
+
+**Síntoma:** tras una caída temporal del WiFi, el mini quedaba muerto con bucle de
+`esp-tls: Failed to create socket` / `heartbeat: ESP_ERR_HTTP_CONNECT`, sin
+recuperarse aunque el WiFi volviera. Requería reinicio manual.
+
+**Causa:** el handler de WIFI_EVENT_STA_DISCONNECTED reintentaba solo WIFI_MAX_RETRY
+(5) veces y luego marcaba WIFI_FAIL_BIT, rindiéndose PARA SIEMPRE. Correcto en el
+arranque (password mala → no insistir), fatal en operación (corte temporal del router
+más largo que 5 intentos → muerto permanente).
+
+**Fix (Opción A — reconexión indefinida):** distinguir arranque vs operación con el
+flag `s_connected_once`:
+- Arranque inicial (nunca conectó): reintenta 5 veces → si falla, portal de config.
+- Caída en operación (ya había IP): reconecta INDEFINIDAMENTE. El router vuelve y el
+  mini se recupera solo, sin reiniciar.
+- No bloquea el event loop (reconexión inmediata vía el ciclo de eventos, sin delays).
+- Log cada 10 intentos para no saturar consola.
