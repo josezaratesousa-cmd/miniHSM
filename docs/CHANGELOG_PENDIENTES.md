@@ -435,3 +435,79 @@ como regalar tokens).
 ¿Todas las firmas exigen 2 capas (HMAC+VaultStamping), o hay operaciones de solo-HMAC
 y otras de alto valor con ambas? Recomendado: Modelo B (dos niveles), VaultStamping
 solo para alto valor / no-repudio auditable.
+
+---
+
+## BLOQUE 5 — EVOLUCIÓN: Secreto cifrado en reposo + KUser efímero (diseño afinado)
+
+> Evolución del esquema de autorización tras análisis detallado (sesión 2026-06-10).
+> Reemplaza el modelo simple de "token HMAC suelto" por uno blindado.
+
+### Concepto central
+El secreto de sesión NO se guarda en claro en el dispositivo. Se guarda CIFRADO, y
+solo se puede usar si el server envía el KUser efímero correcto que lo desbloquea.
+El secreto en reposo es INÚTIL sin autorización viva (el KUser de cada operación).
+
+### Emparejamiento (match — una sola vez por device)
+```
+server: S = random_seguro(pequeño)               // clave de sesion, pequeña a proposito
+server: secreto_cifrado = VaultStamping_encrypt(S, KMaster_device)
+server → mini: secreto_cifrado
+mini: guarda secreto_cifrado
+```
+- Cada device tiene su PROPIO KMaster (distinto por dispositivo).
+- **ANOTADO: cuando llegue el ATECC608B, el secreto_cifrado va en el chip de seguridad,
+  no en NVS.**
+
+### Cada operación de firma
+```
+SERVER ARMA:
+  - deriva KUser efimero del KMaster (UNICO, nunca repetido)
+  - mensaje = "minihsm:<ts>:<nonce>:<kuser>:<ts_kuser>"   // ORDEN FIJO (canonico)
+  - HMAC = HMAC-SHA256(mensaje, secret)
+  - token_cifrado = AES256(payload, S)
+  → manda { digest, token_cifrado, kuser, ts, ts_kuser, nonce, HMAC }
+
+MINI VALIDA (en orden):
+  1. ¿hash(kuser) ya usado? → anti-replay (buffer rotativo 10000) → si repetido, RECHAZA
+  2. ¿ts y ts_kuser dentro de ventana? → caducidad → rechazo TEMPRANO (antes de gastar cripto)
+  3. reconstruye el MISMO mensaje canonico
+  4. recalcula HMAC y compara → si no coincide → RECHAZA
+  5. S = VaultStamping_decrypt(secreto_cifrado, kuser)
+  6. token_real = AES256_decrypt(token_cifrado, S)
+  7. valida token_real
+  8. si todo OK → registra hash(kuser) en buffer → FIRMA
+```
+
+### Propiedades de seguridad logradas
+- **Secreto inútil en reposo:** sin KUser efímero, secreto_cifrado no se puede usar.
+  Robar el flash/NVS no sirve de nada.
+- **Replay imposible (reciente):** cada KUser único, su hash se quema en buffer rotativo.
+- **Replay imposible (antiguo):** aunque el buffer rote y olvide un hash viejo, el
+  timestamp caducado lo rechaza igual. Las dos barreras se cubren mutuamente.
+- **No se puede alterar ni mezclar piezas:** el HMAC cubre token + KUser + AMBOS
+  timestamps. Cambiar el KUser, su timestamp, o mezclar piezas de operaciones
+  distintas → el HMAC no coincide → rechazado.
+- **Autorización demostrable:** "el server me autorizó y puedo probarlo" (VaultStamping).
+- **Autenticación fuerte:** el HMAC es la verificación criptográfica robusta.
+- **Barato en ESP32:** secreto pequeño + AES256 (hardware) + HMAC (hardware).
+
+### El hueco que se encontró y se cerró (importante)
+ANÁLISIS: el KUser, si viaja FUERA del HMAC, es modificable. Un atacante podría
+cambiarlo o mezclar el KUser de una operación con el token de otra, y el HMAC (que
+solo protegía su propio token) no lo notaría.
+SOLUCIÓN: incluir el KUser y su timestamp DENTRO del mensaje que firma el HMAC.
+Regla general: **todo lo que importa va dentro del HMAC. Lo que queda fuera, es
+modificable.** Un solo HMAC con un solo sello protege token + KUser + timestamps.
+
+### Detalles de implementación a cuidar
+- **Canonicalización estricta:** server y mini deben armar el mensaje byte por byte
+  idéntico (mismo orden, separadores, formato). Si difieren, el HMAC no coincide aunque
+  todo sea legítimo. Punto crítico donde estos esquemas suelen fallar.
+- **Buffer anti-replay:** 10000 hashes × 32 bytes = ~320KB en NVS. Reservar partición.
+- **Caducidad temprana:** validar timestamps en paso 2 (antes de descifrar) ahorra
+  cómputo en requests inválidos/ataques.
+- **Tamaño del secreto:** pequeño a propósito. VaultStamping aquí da DEMOSTRABILIDAD,
+  no fortaleza; la fortaleza criptográfica la aporta el HMAC. Secreto pequeño mitiga
+  la debilidad del cifrado lineal multiplicativo.
+- **KMaster por device:** cada dispositivo con su propio KMaster en el server.
