@@ -3,6 +3,7 @@
 #include "crypto_engine.h"
 #include "esp_log.h"
 #include <string.h>
+#include <stdlib.h>
 
 #include "mbedtls/ecdh.h"
 #include "mbedtls/ecp.h"
