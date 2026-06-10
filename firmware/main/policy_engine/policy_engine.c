@@ -19,6 +19,7 @@ static const char *NVS_SECRET = "hmac_secret";
 
 static uint8_t s_secret[SECRET_SIZE];
 static int     s_initialized = 0;
+static int     s_has_secret  = 0;
 
 static char s_replay_cache[REPLAY_CACHE_SIZE][65];
 static int  s_replay_idx = 0;
@@ -93,23 +94,16 @@ esp_err_t policy_init(void)
     esp_err_t err = nvs_load_secret(s_secret);
 
     if (err == ESP_ERR_NVS_NOT_FOUND) {
-        ESP_LOGI(TAG, "No HMAC secret found, generating...");
-
-        /* Generar 32 bytes aleatorios via PSA */
-        psa_status_t status = psa_generate_random(s_secret, SECRET_SIZE);
-        if (status != PSA_SUCCESS) {
-            ESP_LOGE(TAG, "psa_generate_random failed: %d", (int)status);
-            return ESP_FAIL;
-        }
-
-        err = nvs_save_secret(s_secret);
-        if (err != ESP_OK) return err;
-
-        ESP_LOGI(TAG, "HMAC secret generated and saved");
+        /* No hay secret: el device aun no se ha emparejado (match) con el server.
+         * El secret llega cifrado (ECIES) en el match y se guarda con policy_set_secret.
+         * NO se genera localmente (modelo Bloque 9: el server es la autoridad). */
+        ESP_LOGW(TAG, "No HMAC secret — device sin emparejar (pendiente de match)");
+        s_has_secret = 0;
     } else if (err != ESP_OK) {
         return err;
     } else {
         ESP_LOGI(TAG, "HMAC secret loaded from NVS");
+        s_has_secret = 1;
     }
 
     memset(s_replay_cache, 0, sizeof(s_replay_cache));
@@ -186,4 +180,22 @@ esp_err_t policy_get_secret_hex(char *secret_out)
     if (!s_initialized) return ESP_ERR_INVALID_STATE;
     crypto_bytes_to_hex(s_secret, SECRET_SIZE, secret_out);
     return ESP_OK;
+}
+/* -------------------------------------------------------------------------- */
+/* Provisioning del secret via match (Bloque 9)                               */
+
+esp_err_t policy_set_secret(const uint8_t *secret)
+{
+    /* Guarda el HMAC secret recibido del server (descifrado por ECIES en el match). */
+    esp_err_t err = nvs_save_secret(secret);
+    if (err != ESP_OK) return err;
+    memcpy(s_secret, secret, SECRET_SIZE);
+    s_has_secret = 1;
+    ESP_LOGI(TAG, "HMAC secret provisionado via match y guardado en NVS");
+    return ESP_OK;
+}
+
+int policy_has_secret(void)
+{
+    return s_has_secret;
 }

@@ -36,3 +36,7 @@ esp_err_t policy_generate_token(int64_t timestamp, const char *nonce, char *toke
  *        secret_out debe tener al menos 65 bytes.
  */
 esp_err_t policy_get_secret_hex(char *secret_out);
+
+/* Provisioning del secret via match (Bloque 9) */
+esp_err_t policy_set_secret(const uint8_t *secret);  /* secret de SECRET_SIZE (32) bytes */
+int       policy_has_secret(void);

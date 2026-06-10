@@ -12,6 +12,7 @@
 #include "audit_engine.h"
 #include "network_engine.h"
 #include "heartbeat.h"
+#include "match_engine.h"
 #include "captive_portal.h"
 #include "version.h"
 #include "esp_system.h"
@@ -80,6 +81,18 @@ void app_main(void)
         esp_restart();
     } else {
         ESP_ERROR_CHECK(network_http_server_start());
+
+        /* Match: si el device no esta emparejado, se empareja con el server
+         * (recibe el HMAC secret cifrado por ECIES). Bloque 9. */
+        if (!policy_has_secret()) {
+            ESP_LOGI(TAG, "Device sin emparejar — iniciando match con el server...");
+            esp_err_t m = match_perform(CONFIG_SERVERHSM_URL);
+            if (m == ESP_OK) {
+                ESP_LOGI(TAG, "Match completado — device emparejado");
+            } else {
+                ESP_LOGW(TAG, "Match fallo — se reintentara en el proximo arranque");
+            }
+        }
 
         /* Heartbeat: registra el miniHSM en el serverHSM cada 5 min */
         heartbeat_init(CONFIG_SERVERHSM_URL, CONFIG_HEARTBEAT_INTERVAL_SEC);

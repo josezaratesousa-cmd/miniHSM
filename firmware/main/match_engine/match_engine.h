@@ -22,3 +22,7 @@
  */
 esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
                               uint8_t *out, size_t out_cap, size_t *out_len);
+
+/* Empareja el device con el server: firma challenge, recibe secret cifrado,
+   lo descifra y lo guarda. No-op si ya tiene secret. */
+esp_err_t match_perform(const char *server_url);

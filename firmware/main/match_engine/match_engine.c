@@ -119,3 +119,118 @@ esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
 
     return ret;
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* match_perform — emparejamiento con el server (Bloque 9)                      */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+#include "policy_engine.h"
+#include "esp_http_client.h"
+#include "esp_crt_bundle.h"
+#include "cJSON.h"
+#include "esp_timer.h"
+
+#define MATCH_MAX_URL   256
+#define MATCH_MAX_RESP  2048
+
+esp_err_t match_perform(const char *server_url)
+{
+    if (policy_has_secret()) {
+        ESP_LOGI(TAG, "Device ya emparejado (tiene secret), match no necesario");
+        return ESP_OK;
+    }
+
+    char device_id[32];
+    if (vault_get_device_id(device_id) != ESP_OK) return ESP_FAIL;
+
+    /* pubkey en hex (65 bytes -> 130 hex) */
+    uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
+    if (vault_get_pubkey(pubkey) != ESP_OK) return ESP_FAIL;
+    char pubkey_hex[CRYPTO_PUBKEY_SIZE * 2 + 1];
+    crypto_bytes_to_hex(pubkey, CRYPTO_PUBKEY_SIZE, pubkey_hex);
+
+    /* challenge = "deviceId:ts:nonce" */
+    int64_t ts = esp_timer_get_time() / 1000000LL;
+    char nonce[17];
+    snprintf(nonce, sizeof(nonce), "%lld", (long long)(ts ^ 0x9A1C));
+    char challenge[96];
+    int ch_len = snprintf(challenge, sizeof(challenge), "%s:%lld:%s",
+                          device_id, (long long)ts, nonce);
+
+    /* firma: SHA256(challenge) -> vault_sign -> DER */
+    uint8_t digest[CRYPTO_DIGEST_SIZE];
+    if (crypto_sha256((const uint8_t *)challenge, ch_len, digest) != ESP_OK)
+        return ESP_FAIL;
+    uint8_t sig_der[CRYPTO_SIG_DER_MAX_SIZE];
+    size_t sig_len = 0;
+    if (vault_sign(digest, sig_der, &sig_len) != ESP_OK) return ESP_FAIL;
+    char sig_hex[CRYPTO_SIG_DER_MAX_SIZE * 2 + 1];
+    crypto_bytes_to_hex(sig_der, sig_len, sig_hex);
+
+    /* body JSON */
+    cJSON *body = cJSON_CreateObject();
+    cJSON_AddStringToObject(body, "deviceId",  device_id);
+    cJSON_AddStringToObject(body, "pubkey",    pubkey_hex);
+    cJSON_AddNumberToObject(body, "timestamp", (double)ts);
+    cJSON_AddStringToObject(body, "nonce",     nonce);
+    cJSON_AddStringToObject(body, "signature", sig_hex);
+    cJSON_AddStringToObject(body, "model",     "A1");
+    char *body_str = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+
+    char url[MATCH_MAX_URL];
+    snprintf(url, sizeof(url), "%.*s/devices/match",
+             (int)(MATCH_MAX_URL - 20), server_url);
+
+    char resp_buf[MATCH_MAX_RESP] = {0};
+    esp_http_client_config_t cfg = {
+        .url               = url,
+        .method            = HTTP_METHOD_POST,
+        .timeout_ms        = 10000,
+        .transport_type    = HTTP_TRANSPORT_OVER_SSL,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, body_str, strlen(body_str));
+
+    esp_err_t ret = ESP_FAIL;
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int status = esp_http_client_get_status_code(client);
+        esp_http_client_read_response(client, resp_buf, MATCH_MAX_RESP - 1);
+        if (status == 200) {
+            cJSON *resp = cJSON_Parse(resp_buf);
+            cJSON *enc = resp ? cJSON_GetObjectItem(resp, "secretsEncrypted") : NULL;
+            if (enc && cJSON_IsString(enc)) {
+                /* hex -> bytes */
+                size_t blob_len = strlen(enc->valuestring) / 2;
+                uint8_t *blob = malloc(blob_len);
+                if (blob && crypto_hex_to_bytes(enc->valuestring, blob, blob_len) == ESP_OK) {
+                    uint8_t secret[32];
+                    size_t out_len = 0;
+                    if (match_ecies_decrypt(blob, blob_len, secret, sizeof(secret), &out_len) == ESP_OK
+                        && out_len == 32) {
+                        if (policy_set_secret(secret) == ESP_OK) {
+                            ESP_LOGI(TAG, "MATCH OK: secret recibido y guardado");
+                            ret = ESP_OK;
+                        }
+                    } else {
+                        ESP_LOGE(TAG, "fallo descifrado ECIES del secret");
+                    }
+                    crypto_zeroize(secret, sizeof(secret));
+                }
+                free(blob);
+            }
+            if (resp) cJSON_Delete(resp);
+        } else {
+            ESP_LOGE(TAG, "match HTTP %d: %s", status, resp_buf);
+        }
+    } else {
+        ESP_LOGE(TAG, "match request failed: %s", esp_err_to_name(err));
+    }
+    esp_http_client_cleanup(client);
+    free(body_str);
+    return ret;
+}
