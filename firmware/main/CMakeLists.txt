@@ -8,6 +8,7 @@ idf_component_register(
         "audit_engine/audit_engine.c"
         "network_engine/network_engine.c"
         "heartbeat/heartbeat.c"
+        "wifi_provision/wifi_provision.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -17,6 +18,7 @@ idf_component_register(
         "audit_engine"
         "network_engine"
         "heartbeat"
+        "wifi_provision"
     REQUIRES
         nvs_flash
         esp_wifi

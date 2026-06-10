@@ -18,15 +18,10 @@
 #include "cert_manager.h"
 #include "policy_engine.h"
 #include "audit_engine.h"
+#include "wifi_provision.h"
 
 static const char *TAG = "network_engine";
 
-#ifndef WIFI_SSID
-#define WIFI_SSID "NETWORK_NAME"
-#endif
-#ifndef WIFI_PASS
-#define WIFI_PASS "NETWORK_PW"
-#endif
 #define WIFI_MAX_RETRY   5
 #define FIRMWARE_VERSION "2.0.0"
 
@@ -63,6 +58,20 @@ static void wifi_event_handler(void *arg, esp_event_base_t eb,
 
 esp_err_t network_wifi_init(void)
 {
+    /* Cargar credenciales: NVS > Kconfig > provisioning mode */
+    wifi_creds_t        creds  = {0};
+    wifi_creds_source_t source = WIFI_SRC_NONE;
+
+    if (wifi_provision_load(&creds, &source) != ESP_OK) {
+        ESP_LOGW(TAG, "No WiFi credentials — skipping WiFi init");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    ESP_LOGI(TAG, "Connecting to WiFi: %s (source=%s)",
+             creds.ssid,
+             source == WIFI_SRC_NVS    ? "NVS"    :
+             source == WIFI_SRC_KCONFIG? "Kconfig" : "none");
+
     s_wifi_event_group = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -77,13 +86,10 @@ esp_err_t network_wifi_init(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &inst_ip));
 
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid     = WIFI_SSID,
-            .password = WIFI_PASS,
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-        },
-    };
+    wifi_config_t wifi_config = { .sta = { .threshold.authmode = WIFI_AUTH_WPA2_PSK } };
+    strncpy((char *)wifi_config.sta.ssid,     creds.ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, creds.pass, sizeof(wifi_config.sta.password) - 1);
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
@@ -517,5 +523,77 @@ esp_err_t network_http_server_start(void)
 esp_err_t network_http_server_stop(void)
 {
     if (s_server) { httpd_stop(s_server); s_server = NULL; }
+    return ESP_OK;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  POST /provision/wifi                                                        */
+/*  Guarda credenciales WiFi en NVS. Requiere token valido.                    */
+/*  El dispositivo reinicia para conectarse con la nueva red.                   */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+static esp_err_t handler_provision_wifi(httpd_req_t *req)
+{
+    char body[512];
+    if (read_body(req, body, sizeof(body)) != ESP_OK) {
+        send_err(req, 400, "ERR001", "Invalid body"); return ESP_OK;
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) { send_err(req, 400, "ERR002", "JSON parse error"); return ESP_OK; }
+
+    const char *kuser    = cJSON_GetStringValue(cJSON_GetObjectItem(root, "kuser"));
+    const char *ssid     = cJSON_GetStringValue(cJSON_GetObjectItem(root, "ssid"));
+    const char *pass     = cJSON_GetStringValue(cJSON_GetObjectItem(root, "pass"));
+    cJSON      *ts_item  = cJSON_GetObjectItem(root, "timestamp");
+    cJSON      *nc_item  = cJSON_GetObjectItem(root, "nonce");
+
+    if (!ssid || strlen(ssid) == 0) {
+        cJSON_Delete(root);
+        send_err(req, 400, "ERR003", "ssid required");
+        return ESP_OK;
+    }
+
+    if (!kuser || !ts_item || !nc_item) {
+        cJSON_Delete(root);
+        send_err(req, 401, "ERR004", "Missing auth fields");
+        return ESP_OK;
+    }
+
+    int64_t ts    = (int64_t)cJSON_GetNumberValue(ts_item);
+    const char *nonce = cJSON_GetStringValue(nc_item);
+
+    if (policy_validate_token(kuser, ts, nonce) != ESP_OK) {
+        cJSON_Delete(root);
+        send_err(req, 401, "ERR005", "Invalid or expired token");
+        return ESP_OK;
+    }
+
+    esp_err_t err = wifi_provision_save(ssid, pass ? pass : "");
+    cJSON_Delete(root);
+
+    if (err != ESP_OK) {
+        send_err(req, 500, "ERR009", "Failed to save credentials");
+        return ESP_OK;
+    }
+
+    send_json(req, 200,
+        "{\"status\":\"ok\",\"message\":\"WiFi credentials saved. Restarting...\"}");
+
+    /* Reiniciar en 1 segundo para conectarse con la nueva red */
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+    return ESP_OK;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  DELETE /provision/wifi — borra credenciales WiFi del NVS                   */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+static esp_err_t handler_provision_wifi_clear(httpd_req_t *req)
+{
+    wifi_provision_clear();
+    send_json(req, 200,
+        "{\"status\":\"ok\",\"message\":\"WiFi credentials cleared from NVS\"}");
     return ESP_OK;
 }

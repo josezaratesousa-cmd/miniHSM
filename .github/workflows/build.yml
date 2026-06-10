@@ -1,10 +1,15 @@
-name: Build MiniHSM Firmware
+name: Build miniHSM Firmware
 
 on:
   push:
     branches: [main]
     paths: ['firmware/**']
   workflow_dispatch:
+    inputs:
+      wifi_ssid:
+        description: 'WiFi SSID (opcional — si vacio usa provisioning mode)'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -14,15 +19,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build with ESP-IDF
+      - name: Crear sdkconfig con credenciales
+        run: |
+          cp firmware/sdkconfig.defaults firmware/sdkconfig.defaults.ci
+          # Las credenciales vienen de GitHub Secrets (nunca se loguean)
+          if [ -n "${{ secrets.WIFI_SSID }}" ]; then
+            echo 'CONFIG_WIFI_SSID="${{ secrets.WIFI_SSID }}"' >> firmware/sdkconfig.defaults.ci
+            echo 'CONFIG_WIFI_PASS="${{ secrets.WIFI_PASS }}"' >> firmware/sdkconfig.defaults.ci
+            echo "WiFi configurado desde Secrets"
+          else
+            echo "WiFi no configurado — el binario usara modo provisioning"
+          fi
+          if [ -n "${{ secrets.SERVERHSM_URL }}" ]; then
+            echo 'CONFIG_SERVERHSM_URL="${{ secrets.SERVERHSM_URL }}"' >> firmware/sdkconfig.defaults.ci
+          fi
+
+      - name: Build con ESP-IDF
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.2.3
           target: esp32s3
           path: firmware
-          command: idf.py build
+          command: >
+            cp sdkconfig.defaults.ci sdkconfig.defaults &&
+            idf.py build
 
-      - name: Merge binaries para flash directo
+      - name: Crear binario merged para flash directo
         run: |
           cd firmware/build
           pip install esptool -q
@@ -34,8 +56,7 @@ jobs:
             0x0000  bootloader/bootloader.bin \
             0x8000  partition_table/partition-table.bin \
             0x10000 minihsm.bin
-          echo "--- Binarios generados ---"
-          ls -lh bootloader/bootloader.bin partition_table/partition-table.bin minihsm.bin minihsm-merged.bin
+          ls -lh *.bin
 
       - name: Subir artefactos
         uses: actions/upload-artifact@v4
@@ -48,23 +69,27 @@ jobs:
             firmware/build/bootloader/bootloader.bin
             firmware/build/partition_table/partition-table.bin
 
-      - name: Crear Release con el binario
+      - name: Crear Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: firmware-v${{ github.run_number }}
-          name: "MiniHSM Firmware build #${{ github.run_number }}"
+          name: "miniHSM Firmware build #${{ github.run_number }}"
           body: |
-            ## Flash rápido (archivo único)
+            ## Flash rápido (un solo archivo)
             ```bash
             esptool.py --chip esp32s3 --port /dev/cu.usbserial-* \
               write_flash 0x0 minihsm-merged.bin
             ```
-            ## Flash manual (3 archivos)
+            ## Configurar WiFi después del flash
+            Si el binario no tiene WiFi configurado, usar el endpoint de provisioning:
             ```bash
-            esptool.py --chip esp32s3 --port /dev/cu.usbserial-* write_flash \
-              0x0000  bootloader.bin \
-              0x8000  partition-table.bin \
-              0x10000 minihsm.bin
+            # 1. Obtener token (modo dev — solo primera vez)
+            curl http://<IP-LOCAL>/token
+
+            # 2. Guardar credenciales WiFi en NVS
+            curl -X POST http://<IP-LOCAL>/provision/wifi \
+              -H "Content-Type: application/json" \
+              -d '{"ssid":"MI_WIFI","pass":"MI_PASS","kuser":"<token>","timestamp":<ts>,"nonce":"<nonce>"}'
             ```
           files: |
             firmware/build/minihsm-merged.bin

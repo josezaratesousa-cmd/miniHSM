@@ -1,0 +1,37 @@
+menu "MiniHSM Configuration"
+
+    menu "WiFi"
+
+        config WIFI_SSID
+            string "WiFi SSID"
+            default ""
+            help
+                Nombre de la red WiFi. Si esta vacio el dispositivo
+                entra en modo provisioning al primer arranque.
+
+        config WIFI_PASS
+            string "WiFi Password"
+            default ""
+            help
+                Contraseña del WiFi.
+
+    endmenu
+
+    menu "ServerHSM"
+
+        config SERVERHSM_URL
+            string "URL del serverHSM"
+            default "https://fileserver.locker/serverHSM/api"
+            help
+                URL base del optimizador serverHSM.
+
+        config HEARTBEAT_INTERVAL_SEC
+            int "Intervalo de heartbeat (segundos)"
+            default 300
+            range 30 3600
+            help
+                Con que frecuencia el miniHSM reporta su IP al serverHSM.
+
+    endmenu
+
+endmenu
