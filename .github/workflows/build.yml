@@ -1,0 +1,73 @@
+name: Build MiniHSM Firmware
+
+on:
+  push:
+    branches: [main]
+    paths: ['firmware/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2.3
+          target: esp32s3
+          path: firmware
+          command: idf.py build
+
+      - name: Merge binaries para flash directo
+        run: |
+          cd firmware/build
+          pip install esptool -q
+          esptool.py --chip esp32s3 merge_bin \
+            -o minihsm-merged.bin \
+            --flash_mode dio \
+            --flash_freq 80m \
+            --flash_size 16MB \
+            0x0000  bootloader/bootloader.bin \
+            0x8000  partition_table/partition-table.bin \
+            0x10000 minihsm.bin
+          echo "--- Binarios generados ---"
+          ls -lh bootloader/bootloader.bin partition_table/partition-table.bin minihsm.bin minihsm-merged.bin
+
+      - name: Subir artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: minihsm-firmware-${{ github.run_number }}
+          retention-days: 90
+          path: |
+            firmware/build/minihsm-merged.bin
+            firmware/build/minihsm.bin
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin
+
+      - name: Crear Release con el binario
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: firmware-v${{ github.run_number }}
+          name: "MiniHSM Firmware build #${{ github.run_number }}"
+          body: |
+            ## Flash rápido (archivo único)
+            ```bash
+            esptool.py --chip esp32s3 --port /dev/cu.usbserial-* \
+              write_flash 0x0 minihsm-merged.bin
+            ```
+            ## Flash manual (3 archivos)
+            ```bash
+            esptool.py --chip esp32s3 --port /dev/cu.usbserial-* write_flash \
+              0x0000  bootloader.bin \
+              0x8000  partition-table.bin \
+              0x10000 minihsm.bin
+            ```
+          files: |
+            firmware/build/minihsm-merged.bin
+            firmware/build/minihsm.bin
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin

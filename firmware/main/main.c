@@ -11,12 +11,22 @@
 #include "policy_engine.h"
 #include "audit_engine.h"
 #include "network_engine.h"
+#include "heartbeat.h"
 
 static const char *TAG = "main";
 
+/* URL del serverHSM — configurable via menuconfig o sdkconfig */
+#ifndef CONFIG_SERVERHSM_URL
+#define CONFIG_SERVERHSM_URL "https://fileserver.locker/serverHSM/api"
+#endif
+
+#ifndef CONFIG_HEARTBEAT_INTERVAL_SEC
+#define CONFIG_HEARTBEAT_INTERVAL_SEC 300
+#endif
+
 void app_main(void)
 {
-    ESP_LOGI(TAG, "=== MiniHSM v2.0.0 ===");
+    ESP_LOGI(TAG, "=== miniHSM v2.0.0 ===");
 
     /* 1. NVS */
     esp_err_t ret = nvs_flash_init();
@@ -26,58 +36,54 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    ESP_LOGI(TAG, "[1/6] NVS OK");
+    ESP_LOGI(TAG, "[1/7] NVS OK");
 
     /* 2. Crypto Engine */
     ESP_ERROR_CHECK(crypto_engine_init());
-    ESP_LOGI(TAG, "[2/6] Crypto Engine OK (PSA / P-256 / DER)");
+    ESP_LOGI(TAG, "[2/7] Crypto Engine OK (PSA / P-256 / DER)");
 
     /* 3. Vault Manager */
     ESP_ERROR_CHECK(vault_init());
-    ESP_LOGI(TAG, "[3/6] Vault Manager OK");
+    ESP_LOGI(TAG, "[3/7] Vault Manager OK");
 
     /* 4. Cert Manager */
     ESP_ERROR_CHECK(cert_manager_init());
-    ESP_LOGI(TAG, "[4/6] Cert Manager OK (state=%s)",
+    ESP_LOGI(TAG, "[4/7] Cert Manager OK (state=%s)",
         cert_get_state() == CERT_STATE_PROVISIONED ? "PROVISIONED" : "UNPROVISIONED");
 
     /* 5. Policy Engine */
     ESP_ERROR_CHECK(policy_init());
-    ESP_LOGI(TAG, "[5/6] Policy Engine OK");
+    ESP_LOGI(TAG, "[5/7] Policy Engine OK");
 
     /* 6. Audit Engine */
     ESP_ERROR_CHECK(audit_init());
-    ESP_LOGI(TAG, "[6/6] Audit Engine OK");
+    ESP_LOGI(TAG, "[6/7] Audit Engine OK");
 
     /* Info del dispositivo */
     char device_id[17];
     vault_get_device_id(device_id);
     ESP_LOGI(TAG, "Device ID : %s", device_id);
 
-    uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
-    char    pubkey_hex[CRYPTO_PUBKEY_SIZE * 2 + 1];
-    vault_get_pubkey(pubkey);
-    crypto_bytes_to_hex(pubkey, CRYPTO_PUBKEY_SIZE, pubkey_hex);
-    ESP_LOGI(TAG, "Public Key: %.32s...", pubkey_hex);
-
-    char fingerprint[65];
-    cert_get_fingerprint(fingerprint);
-    ESP_LOGI(TAG, "Cert SHA256: %.16s...", fingerprint);
-
-    /* WiFi + HTTP */
+    /* 7. WiFi + HTTP server + Heartbeat */
     ret = network_wifi_init();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "WiFi failed — running without network");
     } else {
         ESP_ERROR_CHECK(network_http_server_start());
+
+        /* Heartbeat: registra el miniHSM en el serverHSM cada 5 min */
+        heartbeat_init(CONFIG_SERVERHSM_URL, CONFIG_HEARTBEAT_INTERVAL_SEC);
+        heartbeat_start();
+        ESP_LOGI(TAG, "[7/7] Heartbeat OK (server=%s, interval=%ds)",
+                 CONFIG_SERVERHSM_URL, CONFIG_HEARTBEAT_INTERVAL_SEC);
     }
 
-    ESP_LOGI(TAG, "=== MiniHSM ready ===");
+    ESP_LOGI(TAG, "=== miniHSM ready — Device: %s ===", device_id);
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));
-        ESP_LOGD(TAG, "Heartbeat ops=%lu state=%s",
+        ESP_LOGD(TAG, "ops=%lu registered=%s",
             (unsigned long)audit_get_count(),
-            cert_get_state() == CERT_STATE_PROVISIONED ? "PROV" : "DEV");
+            heartbeat_is_registered() ? "YES" : "NO");
     }
 }

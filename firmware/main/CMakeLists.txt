@@ -7,6 +7,7 @@ idf_component_register(
         "policy_engine/policy_engine.c"
         "audit_engine/audit_engine.c"
         "network_engine/network_engine.c"
+        "heartbeat/heartbeat.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -15,10 +16,12 @@ idf_component_register(
         "policy_engine"
         "audit_engine"
         "network_engine"
+        "heartbeat"
     REQUIRES
         nvs_flash
         esp_wifi
         esp_http_server
+        esp_http_client
         esp_timer
         mbedtls
         espressif__cjson
