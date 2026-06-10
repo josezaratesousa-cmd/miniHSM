@@ -511,3 +511,29 @@ modificable.** Un solo HMAC con un solo sello protege token + KUser + timestamps
   no fortaleza; la fortaleza criptográfica la aporta el HMAC. Secreto pequeño mitiga
   la debilidad del cifrado lineal multiplicativo.
 - **KMaster por device:** cada dispositivo con su propio KMaster en el server.
+
+---
+
+## LIMPIEZA DE API — endpoints del miniHSM (actualizado)
+
+Endpoints eliminados por seguridad/redundancia:
+- **GET /token** — ELIMINADO (puerta trasera; el server genera tokens, el mini valida)
+- **GET /pubkey** — ELIMINADO (redundante; la pubkey vive en /device, su lugar natural)
+
+Endpoints actuales del miniHSM:
+```
+POST /sign                    firma un digest (requiere autorizacion)
+POST /verify                  verifica una firma
+GET  /cert                    certificado actual (PEM)
+POST /cert                    carga cert firmado por CA
+GET  /csr                     genera CSR para ceremonia de CA
+GET  /device                  identidad criptografica (incluye pubkey)
+GET  /health                  estado operativo
+GET  /audit                   log de auditoria
+POST /provision/wifi          configura WiFi (desde portal)
+DEL  /provision/wifi          borra credenciales WiFi
+POST /provision/reconfigure   reconfiguracion remota (requiere KUser admin)
+```
+
+Principio aplicado: una sola fuente de identidad (la fuerte). La pubkey en /device,
+que evolucionara a Verifiable Credential con proof of possession (Bloque 3).
