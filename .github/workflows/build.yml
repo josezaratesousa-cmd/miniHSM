@@ -31,6 +31,19 @@ jobs:
           WIFI_PASS: ${{ secrets.WIFI_PASS }}
           SERVERHSM_URL: ${{ secrets.SERVERHSM_URL }}
 
+      - name: Inyectar version (commit + build) en el firmware
+        run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD="${{ github.run_number }}"
+          echo "Generando version: build $BUILD commit $COMMIT"
+          cat > firmware/main/version_generated.h <<EOF
+          #pragma once
+          #define XAMI_GIT_COMMIT   "$COMMIT"
+          #define XAMI_BUILD_NUMBER "$BUILD"
+          EOF
+          echo "--- version_generated.h ---"
+          cat firmware/main/version_generated.h
+
       - name: Build con ESP-IDF v5.4.4
         uses: espressif/esp-idf-ci-action@v1
         with:

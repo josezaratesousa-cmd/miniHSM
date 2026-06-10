@@ -12,6 +12,9 @@
 #include "audit_engine.h"
 #include "network_engine.h"
 #include "heartbeat.h"
+#include "captive_portal.h"
+#include "version.h"
+#include "esp_system.h"
 
 static const char *TAG = "main";
 
@@ -26,7 +29,7 @@ static const char *TAG = "main";
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "=== miniHSM v2.0.0 ===");
+    ESP_LOGI(TAG, "=== %s ===", XAMI_VERSION_STRING);
 
     /* 1. NVS */
     esp_err_t ret = nvs_flash_init();
@@ -67,7 +70,14 @@ void app_main(void)
     /* 7. WiFi + HTTP server + Heartbeat */
     ret = network_wifi_init();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "WiFi failed — running without network");
+        /* Sin red: no hay credenciales o fallo la conexion.
+         * Levantar el portal Xami para que el usuario configure su WiFi. */
+        ESP_LOGW(TAG, "Sin conexion WiFi — abriendo portal de configuracion Xami");
+        captive_portal_start();
+        /* Si el portal guarda credenciales, reinicia solo (esp_restart).
+         * Si hace timeout, reintentamos el ciclo reiniciando. */
+        ESP_LOGW(TAG, "Portal cerrado sin configurar — reiniciando para reintentar");
+        esp_restart();
     } else {
         ESP_ERROR_CHECK(network_http_server_start());
 
@@ -78,7 +88,7 @@ void app_main(void)
                  CONFIG_SERVERHSM_URL, CONFIG_HEARTBEAT_INTERVAL_SEC);
     }
 
-    ESP_LOGI(TAG, "=== miniHSM ready — Device: %s ===", device_id);
+    ESP_LOGI(TAG, "=== Xami listo — Device: %s ===", device_id);
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));

@@ -18,13 +18,14 @@
 #include "cert_manager.h"
 #include "policy_engine.h"
 #include "audit_engine.h"
+#include "version.h"
 #include "wifi_provision.h"
 #include "esp_system.h"
 
 static const char *TAG = "network_engine";
 
 #define WIFI_MAX_RETRY   5
-#define FIRMWARE_VERSION "2.0.0"
+#define FIRMWARE_VERSION XAMI_VERSION
 
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
