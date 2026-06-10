@@ -627,3 +627,30 @@ Implicaciones:
 - **Verificación profunda (opcional, para disputas):** consultar a stamping.io la
   Merkle proof del evidence tras cerrar el lote → evidence → ruta → raíz → tx blockchain.
   Para uso normal, guardar el trxid basta.
+
+### Datos a guardar para la prueba de estampado (CORRIGE "solo trxid")
+El mecanismo completo de stamping.io es:
+1. evidence encolados → Merkle tree
+2. Merkle tree (con datos del JSON) → se sube a IPFS
+3. El CID de IPFS → se registra en un contrato
+4. Un contrato de INDEXACIÓN relaciona (recipient + blockhash + nonce + timestamp)
+   → permite calcular/ubicar el CID
+5. Con el CID → recuperas el Merkle tree de IPFS → verificas tu evidence
+
+Por tanto el trxid SOLO NO basta para la verificación profunda. Hay que guardar las
+**coordenadas de la prueba** (bloque "stamping" junto a cada sello):
+```json
+"stamping": {
+  "trxid": "<sha1 del evidence>",
+  "recipient": 534070,
+  "blockhash": "0x...",
+  "nonce": "...",
+  "timestamp": 1781115838778
+}
+```
+Estos 5 campos juntos permiten al algoritmo de atestación (del grupo, que entrará)
+calcular el CID, ir a IPFS, traer el Merkle tree y probar que el evidence estaba
+incluido. El resto de campos de la respuesta (version, server, quantity...) NO interesan.
+
+Naturaleza: el sello es una PRUEBA DIFERIDA Y RECONSTRUIBLE. Meses después, con esas
+coordenadas → CID → Merkle tree en IPFS → prueba matemática de inclusión.
