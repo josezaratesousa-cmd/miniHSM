@@ -7,7 +7,7 @@ CONFIG_WIFI_SSID=""
 CONFIG_WIFI_PASS=""
 
 # ServerHSM
-CONFIG_SERVERHSM_URL="https://fileserver.locker/serverHSM/api"
+CONFIG_SERVERHSM_URL="https://api.xami.run"
 CONFIG_HEARTBEAT_INTERVAL_SEC=300
 
 # ESP32-S3 — Flash 16MB (PSRAM desactivada: no es necesaria y causaba panic en arranque)
@@ -21,6 +21,6 @@ CONFIG_MBEDTLS_ENTROPY_C=y
 CONFIG_MBEDTLS_HAVE_TIME=y
 CONFIG_MBEDTLS_USE_PSA_CRYPTO=y
 
-# Bundle de certificados raiz (para que el heartbeat valide HTTPS de fileserver.locker)
+# Bundle de certificados raiz (para que el heartbeat valide HTTPS de api.xami.run)
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y

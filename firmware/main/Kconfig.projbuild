@@ -21,7 +21,7 @@ menu "MiniHSM Configuration"
 
         config SERVERHSM_URL
             string "URL del serverHSM"
-            default "https://fileserver.locker/serverHSM/api"
+            default "https://api.xami.run"
             help
                 URL base del optimizador serverHSM.
 

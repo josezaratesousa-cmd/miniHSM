@@ -20,7 +20,7 @@ static const char *TAG = "main";
 
 /* URL del serverHSM — configurable via menuconfig o sdkconfig */
 #ifndef CONFIG_SERVERHSM_URL
-#define CONFIG_SERVERHSM_URL "https://fileserver.locker/serverHSM/api"
+#define CONFIG_SERVERHSM_URL "https://api.xami.run"
 #endif
 
 #ifndef CONFIG_HEARTBEAT_INTERVAL_SEC
