@@ -25,6 +25,7 @@ idf_component_register(
         esp_http_server
         esp_http_client
         esp_timer
+        esp_system
         mbedtls
         espressif__cjson
 )

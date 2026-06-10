@@ -5,11 +5,6 @@ on:
     branches: [main]
     paths: ['firmware/**']
   workflow_dispatch:
-    inputs:
-      wifi_ssid:
-        description: 'WiFi SSID (opcional — si vacio usa provisioning mode)'
-        required: false
-        default: ''
 
 jobs:
   build:
@@ -19,35 +14,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Crear sdkconfig con credenciales
+      - name: Inyectar credenciales en sdkconfig.defaults
         run: |
-          cp firmware/sdkconfig.defaults firmware/sdkconfig.defaults.ci
-          # Las credenciales vienen de GitHub Secrets (nunca se loguean)
-          if [ -n "${{ secrets.WIFI_SSID }}" ]; then
-            echo 'CONFIG_WIFI_SSID="${{ secrets.WIFI_SSID }}"' >> firmware/sdkconfig.defaults.ci
-            echo 'CONFIG_WIFI_PASS="${{ secrets.WIFI_PASS }}"' >> firmware/sdkconfig.defaults.ci
-            echo "WiFi configurado desde Secrets"
+          # Agregar credenciales desde GitHub Secrets al sdkconfig.defaults
+          # Si no hay secrets configurados, el binario arranca en modo provisioning
+          if [ -n "$WIFI_SSID" ]; then
+            echo "CONFIG_WIFI_SSID=\"$WIFI_SSID\"" >> firmware/sdkconfig.defaults
+            echo "CONFIG_WIFI_PASS=\"$WIFI_PASS\""  >> firmware/sdkconfig.defaults
+            echo "WiFi inyectado desde Secrets"
           else
-            echo "WiFi no configurado — el binario usara modo provisioning"
+            echo "Sin WiFi secrets — modo provisioning activo"
           fi
-          if [ -n "${{ secrets.SERVERHSM_URL }}" ]; then
-            echo 'CONFIG_SERVERHSM_URL="${{ secrets.SERVERHSM_URL }}"' >> firmware/sdkconfig.defaults.ci
+          if [ -n "$SERVERHSM_URL" ]; then
+            echo "CONFIG_SERVERHSM_URL=\"$SERVERHSM_URL\"" >> firmware/sdkconfig.defaults
           fi
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASS: ${{ secrets.WIFI_PASS }}
+          SERVERHSM_URL: ${{ secrets.SERVERHSM_URL }}
 
-      - name: Build con ESP-IDF
+      - name: Build con ESP-IDF v5.2.3
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.2.3
           target: esp32s3
           path: firmware
-          command: >
-            cp sdkconfig.defaults.ci sdkconfig.defaults &&
-            idf.py build
+          command: idf.py build
 
-      - name: Crear binario merged para flash directo
+      - name: Crear merged binary para flash directo
         run: |
-          cd firmware/build
           pip install esptool -q
+          cd firmware/build
           esptool.py --chip esp32s3 merge_bin \
             -o minihsm-merged.bin \
             --flash_mode dio \
@@ -76,20 +73,14 @@ jobs:
           name: "miniHSM Firmware build #${{ github.run_number }}"
           body: |
             ## Flash rápido (un solo archivo)
-            ```bash
-            esptool.py --chip esp32s3 --port /dev/cu.usbserial-* \
-              write_flash 0x0 minihsm-merged.bin
             ```
-            ## Configurar WiFi después del flash
-            Si el binario no tiene WiFi configurado, usar el endpoint de provisioning:
-            ```bash
-            # 1. Obtener token (modo dev — solo primera vez)
-            curl http://<IP-LOCAL>/token
-
-            # 2. Guardar credenciales WiFi en NVS
-            curl -X POST http://<IP-LOCAL>/provision/wifi \
+            esptool.py --chip esp32s3 --port COM7 write_flash 0x0 minihsm-merged.bin
+            ```
+            ## Configurar WiFi (si el binario no trae credenciales)
+            ```
+            curl -X POST http://<IP-ESP32>/provision/wifi \
               -H "Content-Type: application/json" \
-              -d '{"ssid":"MI_WIFI","pass":"MI_PASS","kuser":"<token>","timestamp":<ts>,"nonce":"<nonce>"}'
+              -d '{"ssid":"TuWiFi","pass":"TuPass","kuser":"...","timestamp":...,"nonce":"..."}'
             ```
           files: |
             firmware/build/minihsm-merged.bin

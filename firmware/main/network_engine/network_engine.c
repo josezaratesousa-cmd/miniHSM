@@ -19,6 +19,7 @@
 #include "policy_engine.h"
 #include "audit_engine.h"
 #include "wifi_provision.h"
+#include "esp_system.h"
 
 static const char *TAG = "network_engine";
 
