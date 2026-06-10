@@ -39,12 +39,16 @@ jobs:
           path: firmware
           command: idf.py build
 
+      - name: Arreglar permisos del build dir
+        run: sudo chown -R $(id -u):$(id -g) firmware/build || true
+
       - name: Crear merged binary para flash directo
         run: |
           pip install esptool -q
+          OUT="${GITHUB_WORKSPACE}/firmware/build/minihsm-merged.bin"
           cd firmware/build
           python -m esptool --chip esp32s3 merge-bin \
-            -o minihsm-merged.bin \
+            -o "${OUT}" \
             --flash-mode dio \
             --flash-freq 80m \
             --flash-size 16MB \
@@ -52,6 +56,7 @@ jobs:
             0x8000  partition_table/partition-table.bin \
             0x10000 minihsm.bin
           echo "--- Binarios generados ---"
+          ls -lh "${OUT}"
           ls -lh *.bin
 
       - name: Subir artefactos
