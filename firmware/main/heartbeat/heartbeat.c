@@ -18,7 +18,7 @@ static const char *TAG = "heartbeat";
 
 #define HEARTBEAT_STACK_SIZE  4096
 #define HEARTBEAT_PRIORITY    5
-#define MAX_URL_LEN           256
+#define MAX_URL_LEN           512   /* increased from 256 to avoid truncation */
 #define MAX_BODY_LEN          512
 #define MAX_RESP_LEN          256
 #define DEFAULT_INTERVAL_SEC  300   /* 5 minutos */
@@ -63,7 +63,7 @@ static esp_err_t do_heartbeat(void)
 
     /* HTTP POST */
     char resp_buf[MAX_RESP_LEN] = {0};
-    int  resp_len = 0;
+    (void)resp_buf; /* suppress unused warning — used in read_response below */
 
     esp_http_client_config_t cfg = {
         .url            = url,
@@ -81,13 +81,13 @@ static esp_err_t do_heartbeat(void)
 
     if (err == ESP_OK) {
         int status = esp_http_client_get_status_code(client);
-        resp_len   = esp_http_client_read_response(client, resp_buf, MAX_RESP_LEN - 1);
+        esp_http_client_read_response(client, resp_buf, MAX_RESP_LEN - 1);
 
         if (status == 200) {
             s_registered = true;
             ESP_LOGI(TAG, "Heartbeat OK — device registered at serverHSM");
         } else {
-            ESP_LOGW(TAG, "Heartbeat HTTP %d: %s", status, resp_buf);
+            ESP_LOGW(TAG, "Heartbeat HTTP %d", status);
         }
     } else {
         ESP_LOGW(TAG, "Heartbeat failed: %s", esp_err_to_name(err));
@@ -107,7 +107,7 @@ static void heartbeat_task(void *arg)
              (unsigned long)s_interval_sec, s_server_url);
 
     /* Primer heartbeat inmediato al arrancar */
-    vTaskDelay(pdMS_TO_TICKS(5000));  /* esperar 5s a que WiFi esté estable */
+    vTaskDelay(pdMS_TO_TICKS(5000));
     do_heartbeat();
 
     while (s_running) {
