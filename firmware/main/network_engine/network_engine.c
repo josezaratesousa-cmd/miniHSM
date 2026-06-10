@@ -466,28 +466,6 @@ static esp_err_t handler_audit(httpd_req_t *req)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  GET /token  — SOLO DESARROLLO                                               */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-static esp_err_t handler_token(httpd_req_t *req)
-{
-    int64_t ts = esp_timer_get_time() / 1000000LL;
-    char nonce[17];
-    snprintf(nonce, sizeof(nonce), "%lld", (long long)(ts ^ 0xDEADBEEF));
-    char token[65];
-    policy_generate_token(ts, nonce, token);
-    char resp[256];
-    snprintf(resp, sizeof(resp),
-        "{\"token\":\"%s\",\"timestamp\":%lld,\"nonce\":\"%s\","
-        "\"warning\":\"DEV-ONLY — remove in production\"}",
-        token, (long long)ts, nonce);
-    send_json(req, 200, resp);
-    return ESP_OK;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  HTTP Server                                                                 */
-/* ─────────────────────────────────────────────────────────────────────────── */
 
 static esp_err_t handler_provision_wifi(httpd_req_t *req);
 static esp_err_t handler_provision_wifi_clear(httpd_req_t *req);
@@ -514,7 +492,6 @@ esp_err_t network_http_server_start(void)
         { .uri = "/health", .method = HTTP_GET,  .handler = handler_health    },
         { .uri = "/pubkey", .method = HTTP_GET,  .handler = handler_pubkey    },
         { .uri = "/audit",  .method = HTTP_GET,  .handler = handler_audit     },
-        { .uri = "/token",  .method = HTTP_GET,  .handler = handler_token     },
         { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
         { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
         { .uri = "/provision/reconfigure", .method = HTTP_POST, .handler = handler_provision_reconfigure },
@@ -525,7 +502,7 @@ esp_err_t network_http_server_start(void)
 
     ESP_LOGI(TAG, "HTTP server started");
     ESP_LOGI(TAG, "POST: /sign /verify /cert");
-    ESP_LOGI(TAG, "GET : /cert /csr /device /health /pubkey /audit /token");
+    ESP_LOGI(TAG, "GET : /cert /csr /device /health /pubkey /audit");
     return ESP_OK;
 }
 
