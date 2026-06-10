@@ -10,6 +10,7 @@ idf_component_register(
         "heartbeat/heartbeat.c"
         "wifi_provision/wifi_provision.c"
         "captive_portal/captive_portal.c"
+        "match_engine/match_engine.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -21,6 +22,7 @@ idf_component_register(
         "heartbeat"
         "wifi_provision"
         "captive_portal"
+        "match_engine"
     REQUIRES
         nvs_flash
         esp_wifi
