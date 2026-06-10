@@ -14,13 +14,18 @@ miniHSM/
 │   │   ├── policy_engine/       ← tokens HMAC, anti-replay
 │   │   ├── audit_engine/        ← log circular firmado
 │   │   └── network_engine/      ← WiFi + HTTP REST API
-│   └── partitions.csv
+│   ├── CMakeLists.txt
+│   ├── partitions.csv
+│   ├── sdkconfig.defaults
+│   └── test_client/
+│       └── test_client.py
 └── optimizer/                   ← Python (FastAPI)
     ├── minihsm/client.py        ← cliente HTTP del firmware
-    ├── signing/pades.py         ← firma PDF
+    ├── signing/pades.py         ← firma PDF (PAdES-B-B)
     ├── signing/xades.py         ← firma XML / facturas SUNAT
     ├── signing/cades.py         ← firma datos genéricos
-    └── api/main.py              ← FastAPI server
+    ├── api/main.py              ← FastAPI server
+    └── requirements.txt
 ```
 
 ## API del firmware
@@ -34,22 +39,34 @@ POST /cert    → cargar certificado firmado por CA
 GET  /device  → info del dispositivo
 GET  /health  → uptime, ops, estado
 GET  /audit   → log de operaciones firmado
-GET  /token   → [DEV] generar token
+GET  /token   → [DEV ONLY] generar token
 ```
 
-## Cambios v2.0 vs v1.0 (MiniHSMOld)
+## Setup firmware
 
-- Firma DER en lugar de raw r||s (PAdES/CAdES/XAdES compatible)
-- Nuevo módulo cert_manager: cert autofirmado + CSR + CA ceremony
-- /sign devuelve certificado junto a la firma
-- Nuevos endpoints: /cert (GET/POST) y /csr
-- Optimizer Python con soporte PAdES, XAdES y CAdES
-- Partición NVS dedicada para certificados
+```bash
+# Requiere ESP-IDF v5.x
+cd firmware
+idf.py set-target esp32s3
+idf.py build
+idf.py -p /dev/cu.usbserial-* flash monitor
+```
+
+## Setup optimizer
+
+```bash
+cd optimizer
+pip install -r requirements.txt
+export MINIHSM_HOST=192.168.1.100
+export MINIHSM_SECRET=<hex del HMAC secret>
+cd api && python main.py
+```
 
 ## Swap a ATECC608B
 
-Solo reemplazar las implementaciones en `crypto_engine.c`:
-- `crypto_generate_keypair()` → genKey en slot ATECC
-- `crypto_sign()` → sign en slot ATECC via I2C
-- `crypto_verify()` → verify via ATECC
-- Todo lo demás (vault, cert, policy, audit, network, optimizer) = sin cambios
+Solo reemplazar las tres funciones en `firmware/main/crypto_engine/crypto_engine.c`:
+- `crypto_generate_keypair()` → genKey en slot ATECC via I2C
+- `crypto_sign()`             → sign  en slot ATECC via I2C
+- `crypto_verify()`           → verify via ATECC
+
+Todo lo demás — vault, cert, policy, audit, network, optimizer — sin cambios.
