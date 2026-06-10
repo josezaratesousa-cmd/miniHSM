@@ -146,3 +146,166 @@ El modelo se define como opción de compilación (`XAMI_MODEL`), no se detecta e
 | #19 | Desactivar PSRAM (causaba bucle de reinicio) |
 | #18 | Permisos CI para crear Releases |
 | #16 | Portal cautivo SoftAP + versionado automático |
+
+---
+
+## BLOQUE 0 (TRANSVERSAL) — Timestamp UTC estándar en TODAS las respuestas
+
+Decisión de arquitectura: **toda** respuesta de la API (miniHSM y serverHSM) debe
+incluir el timestamp UTC de forma estándar. Cada respuesta es potencialmente evidencia.
+
+Bloque de tiempo estándar:
+```json
+"time": "2026-06-10T20:30:00Z",
+"timeUnix": 1781112600,
+"timeSynced": true
+```
+
+- **time:** ISO 8601 con `Z` explícita (UTC, inequívoco). Nunca hora local.
+- **timeUnix:** epoch en segundos (para máquinas, sin ambigüedad de formato).
+- **timeSynced:** si el reloj ya sincronizó por NTP. `false` = no confiar en el timestamp.
+
+Razón del UTC siempre: dispositivos en distintos países deben hablar el mismo idioma
+de tiempo. La conversión a hora local es problema de quien muestra, no de quien firma.
+
+Implementación: función central que arma toda respuesta JSON e inyecta el bloque meta
+automáticamente (evita olvidos por handler). Decidir entre:
+- A) Envelope `{meta:{...}, data:{...}}` — más limpio, rompe compatibilidad actual.
+- B) Campos meta al nivel raíz — menos disruptivo, mezcla meta con datos.
+Recomendado: A (envelope), por estar el proyecto temprano.
+
+Depende de: NTP (Fix 4a del Bloque 1).
+
+---
+
+## BLOQUE 2 — Mejoras a `/device` (pendiente)
+
+**Estado actual:**
+```json
+{
+  "deviceId": "af811cc685297a80",
+  "firmware": "1.0.0",
+  "pubkey": "04ad72e4...",
+  "backend": "mbedTLS-PSA",
+  "curve": "P-256",
+  "sigFormat": "DER",
+  "certFingerprint": "92a5dd04...",
+  "certState": "UNPROVISIONED"
+}
+```
+
+**Propósito del endpoint:** tarjeta de identidad criptográfica del Xami. Permite a
+sistemas externos (serverHSM, CA, auditor) conocer la identidad del dispositivo y
+cómo verificar lo que firma, SIN tener que firmar nada. Casos de uso:
+verificar firmas (necesitan la pubkey), registro en serverHSM, ceremonia de CA,
+auditoría/forense.
+
+**Cambios:**
+- `deviceId` con formato `Xami-<MODELO>-<DeviceID>` (consistente con /health)
+- `firmware` estructurado (version/build/release)
+- Agregar bloque de tiempo estándar (Bloque 0)
+- El `backend` delata el modelo: A1="mbedTLS-PSA" (software), A2="ATECC608B" (hardware)
+
+---
+
+## BLOQUE 3 — `/device` como Verifiable Credential W3C 2.0 (diseño)
+
+> miniHSM: emite la credencial y la firma (proof of possession).
+
+Convertir `/device` en una **Verifiable Credential** alineada al
+**W3C VC Data Model 2.0** (Recomendación oficial desde 15 mayo 2025).
+
+La credencial no solo DICE la identidad, la DEMUESTRA: el Xami firma la credencial
+con su clave privada. Quien verifica usa la pubkey declarada para validar la firma.
+Si valida → prueba criptográfica de que el dispositivo posee la clave privada
+(proof of possession). No se puede mentir sobre la pubkey sin invalidar la firma.
+
+Estructura W3C 2.0 (3 partes: issuer/holder/verifier):
+```json
+{
+  "@context": ["https://www.w3.org/ns/credentials/v2"],
+  "type": ["VerifiableCredential", "XamiDeviceCredential"],
+  "issuer": "did:xami:af811cc685297a80",
+  "validFrom": "2026-06-10T20:30:00Z",
+  "credentialSubject": {
+    "id": "did:xami:af811cc685297a80",
+    "model": "A1",
+    "publicKeyMultibase": "...",
+    "curve": "P-256",
+    "certState": "UNPROVISIONED",
+    "backend": "mbedTLS-PSA"
+  },
+  "proof": { ... }
+}
+```
+
+**Securing mechanism elegido: COSE** (CBOR Object Signing).
+Razón: binario y compacto (ideal para ESP32), estándar de facto en IoT/embebido
+(pasaportes electrónicos, mDL). ECDSA P-256 = COSE ES256.
+Alternativas descartadas: JOSE/JWT (texto, más pesado, útil solo para debug inicial),
+Data Integrity JSON-LD (canonicalización pesada para embebido).
+
+**Cómo COSE demuestra posesión de la clave:** la firma COSE_Sign1 solo es generable
+con la privada y solo verificable con la pública declarada. Firmar = demostrar.
+
+**Frescura (anti-replay) — soportar ambas:**
+- A) Timestamp en payload: el verificador exige que sea reciente. Simple, requiere
+  relojes sincronizados.
+- B) Challenge-response: endpoint `/device/challenge` recibe un nonce del verificador,
+  el Xami lo firma. Impredecible y de un solo uso → prueba en tiempo real. Estándar oro.
+
+**Decisiones de diseño abiertas:**
+1. DID method: `did:xami:` propio vs `did:key` (deriva de la pubkey, sin infraestructura)
+2. Frescura: timestamp (A), challenge (B), o ambas (recomendado)
+3. Canonicalización: cómo se serializa el payload para que device y verificador
+   produzcan los mismos bytes (punto crítico donde estos esquemas suelen fallar)
+4. Librería CBOR en firmware (COSE la necesita)
+
+Specs de referencia: VC-DATA-MODEL-2.0, VC-JOSE-COSE, Data Integrity ECDSA Cryptosuites v1.0
+
+---
+
+## BLOQUE 4 — Verification-as-a-Service (diseño)
+
+Servicio de verificación de firmas en el Xami Server, para que terceros que confíen
+en el servidor puedan verificar sin implementar código criptográfico propio.
+
+**Dividido en 2 piezas:**
+
+### miniHSM (dispositivo) — POSEE la clave y FIRMA
+- Emite la Verifiable Credential COSE (Bloque 3) con proof of possession
+- Produce las firmas de digests (PAdES/CAdES/XAdES via optimizer)
+- No verifica firmas de terceros; solo demuestra su identidad y firma
+- Endpoint `/verify` actual: revisar si se mantiene o se mueve al server
+
+### serverHSM (Xami Server) — VERIFICA y presta el SERVICIO
+- Registro de dispositivos (qué pubkey = qué Xami; ya empezado con heartbeat + /device)
+- Verificador COSE/ECDSA (Python: `cryptography` / `pycose`)
+- Estado de certificados (self-signed / ca-signed / revocado)
+- Validación de timestamp (y eventualmente contra TSA RFC3161)
+- Registro de auditoría de verificaciones
+- Endpoint `POST /verify` público:
+```json
+// request
+{ "document": "...|hash", "signature": "...", "credential": "...COSE (opcional)" }
+// response
+{
+  "valid": true,
+  "signedBy": "Xami-A1-af811cc685297a80",
+  "model": "A1",
+  "signedAt": "2026-06-10T20:30:00Z",
+  "certState": "ca-signed",
+  "verifiedAt": "2026-06-10T21:00:00Z"
+}
+```
+
+**Modelo de confianza (clave):** este servicio es para quien CONFÍA en el operador del
+Xami Server (confianza trasladada al servidor, no solo matemática). Para partes que NO
+confían (disputa legal, regulador), la verificación independiente SIGUE siendo posible
+porque usamos estándares (ECDSA P-256, COSE, W3C VC 2.0) — no se encierra a nadie.
+
+**Decisión abierta:** ¿la verificación vive en el dispositivo o en el server?
+Recomendado: en el server (más recursos + registro de dispositivos).
+
+Valor de negocio: baja la barrera de adopción, centraliza la lógica correcta,
+permite agregar valor (revocación, cadena CA, auditoría), modelo cobrable por uso.
