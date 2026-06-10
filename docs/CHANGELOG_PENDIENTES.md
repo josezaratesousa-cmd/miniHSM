@@ -687,3 +687,159 @@ Estructura de respuesta (data + attestation firmada + stamping, todo al vuelo):
 }
 ```
 Esto REEMPLAZA la nota anterior de "guardar las coordenadas". El Xami NO guarda.
+
+---
+
+## BLOQUE 8 — Servicios de firma del serverHSM (homologados con UANATACA)
+
+> Objetivo de negocio: que los clientes que hoy usan UANATACA solo cambien el HOST
+> y sigan funcionando. Payload compatible + respuesta similar. Campos extra de Xami
+> (deviceId, attestation, zkproof) son OPCIONALES: si no los leen, no les afecta.
+
+### Patrón de arquitectura (decisión)
+Separar lógica interna de interfaz pública:
+```
+ENDPOINTS (interfaz, patrón REST correcto)
+   ├── Compatibilidad UANATACA: /signbox/api/v1/sign, /job/{id}, /result/{id}
+   └── API nativa Xami:         /v1/signatures/digest, /v1/signatures/pdf
+        │ usan (NO duplican lógica)
+   CLASES INTERNAS REUTILIZABLES
+   ├── SigningService   → orquesta la firma
+   ├── PadesBuilder     → arma el PAdES (pyhanko, ya esbozado en pades.py)
+   ├── MiniHSMClient    → habla con el dispositivo (ya existe)
+   └── AuthValidator    → valida HMAC + KUser (Bloque 5)
+```
+Las dos "caras" comparten la misma lógica. Solo cambia qué exponen.
+
+### Familia 1 — Compatibilidad UANATACA (clientes existentes)
+Path EXACTO de UANATACA para que solo cambien el host:
+```
+POST /signbox/api/v1/sign      → firma (acepta payload UANATACA tal cual)
+GET  /signbox/api/v1/job/{id}  → estado del job (async)
+GET  /signbox/api/v1/result/{id} → PDF firmado
+```
+
+Payload UANATACA soportado (mismos nombres de campo):
+- `file` / `url_in` / `url_out` → PDF (archivo o por URL)
+- `format` (default PADES), `level` (default BES = B-B)
+- `signature_subfilter` (ETSI.CAdES.detached)
+- `signature_appearance` → MISMO formato JSON de UANATACA (ver abajo)
+- `useasync` (true → job_id pattern)
+- `tsa_url` / `tsa_user` / `tsa_pass` → sellado de tiempo
+- `username` / `password` / `pin` → IGNORADOS (la clave está en el miniHSM, no en nube)
+- `otp` / `sessionid` → para flujo con validación de usuario (futuro)
+
+Campos EXTRA de Xami (opcionales, default = comportamiento UANATACA esperado):
+- `deviceId` → qué Xami firma (si no se manda, device por defecto del tenant)
+- (en respuesta) `attestation`, `zkproof` → el plus de Xami, UANATACA no los tiene
+
+### signature_appearance (formato UANATACA adoptado tal cual)
+```json
+{
+  "text": ["Firmado por: %(CN)s", "%(EMAIL)s %(L)s %(SUBJECT)s", "Fecha: %(DATE)s"],
+  "date": "%d/%m/%Y %H:%M:%S %z",
+  "timezone": "America/Guatemala",
+  "position": "30,100,165,150",   // x,y,ancho,alto
+  "qrcode": "",
+  "horizontal": true,
+  "page": 0
+}
+```
+Plantillas soportadas: %(CN)s, %(EMAIL)s, %(L)s, %(SUBJECT)s, %(DATE)s, etc.
+Adoptar el mismo formato = máxima compatibilidad con apps que ya lo arman.
+
+### Familia 2 — API nativa Xami (clientes nuevos, patrón limpio)
+
+**Servicio 1 — /v1/signatures/digest (paso-through):**
+Una app ya armó el PAdES/CMS y solo necesita que el miniHSM firme el hash.
+```json
+POST /v1/signatures/digest
+Authorization: Bearer <token>
+{ "deviceId": "Xami-A1-af811cc...", "digest": "a687e3... (64 hex)", "requestId": "..." }
+
+→ 201:
+{
+  "meta": { "time","timeUnix","timeSynced","device","model" },
+  "data": {
+    "requestId": "...",
+    "signature": "3045...",
+    "algorithm": "ECDSA-P256-SHA256-DER",
+    "certificate": "-----BEGIN CERTIFICATE-----...",
+    "certState": "UNPROVISIONED"
+  },
+  "attestation": { ... },   // firma del Xami sobre la operacion + sello stamping.io
+  "zkproof": { ... }        // prueba "me autorizaste" (KUser, Bloque 5)
+}
+```
+
+**Servicio 2 — /v1/signatures/pdf (asistencia completa PAdES):**
+La app manda el PDF y datos; el server hace todo el trabajo PAdES.
+```json
+POST /v1/signatures/pdf
+Authorization: Bearer <token>
+{
+  "deviceId": "Xami-A1-af811cc...",
+  "pdf": "<base64>",
+  "requestId": "...",
+  "visible": true,                    // flag visible/invisible
+  "appearance": {                     // si visible=false, se ignora
+    "image": "<base64>", "page": 0,
+    "position": "30,100,165,150",
+    "text": ["...","..."]
+  },
+  "metadata": { "reason","location","contact","name" }
+}
+
+→ 201:
+{
+  "meta": { ... },
+  "data": {
+    "requestId": "...",
+    "signedPdf": "<base64>",
+    "control": {                      // CONTROL: qué se firmó y qué se aplicó
+      "signedHash": "f4b943...",
+      "algorithm": "ECDSA-P256-SHA256-DER",
+      "certState": "UNPROVISIONED",
+      "visible": true,
+      "appliedMetadata": { "reason","location","contact","name" },
+      "appearance": { "page","position" }
+    }
+  },
+  "attestation": { ... },
+  "zkproof": { ... }
+}
+```
+
+### attestation + zkproof en TODA respuesta de firma (punto clave)
+Tanto el server como el mini siempre responden "me autorizaste y lo demuestro":
+- **attestation**: firma del Xami sobre la operación (proof of possession, Bloque 3)
+  + las coordenadas del sello stamping.io (trxid, recipient, blockhash, nonce,
+  timestamp — Bloque 7). El Xami NO las almacena, solo las responde.
+- **zkproof**: la prueba de conocimiento cero del KUser (VaultStamping, Bloque 5)
+  que demuestra que la operación fue autorizada, sin revelar secretos.
+Compatible con UANATACA: si la app no lee estos campos, no le afecta.
+
+### Por qué la homologación funciona (concepto)
+UANATACA = firma remota con certificado en la nube.
+Xami = firma con HSM físico + atestación blockchain + zkproof.
+PERO de cara a la app, el contrato se ve IGUAL: manda PDF + apariencia, recibe PDF
+firmado. A la app no le importa el "cómo" interno. Cambian host y funciona, con el
+plus de Xami de regalo.
+
+### Estado del código actual (diagnóstico)
+- `optimizer/signing/pades.py` (161 líneas): base correcta con pyhanko. El patrón
+  MiniHSMPdfSigner(Signer) delega la firma al miniHSM. Flujo criptográfico CORRECTO
+  (verificado: el mini usa psa_sign_hash que firma el digest directo, sin doble hash).
+- `optimizer/api/main.py`: tiene /sign/digest (casi listo para Servicio 1) y /sign/pdf
+  (recibe archivo, devuelve PDF — falta migrar al patrón nuevo).
+- FALTA: los dos servicios con el patrón nuevo, la compatibilidad UANATACA, los bloques
+  attestation+zkproof, el flag visible/invisible, la apariencia, el bloque control.
+- PENDIENTE: prueba end-to-end con Acrobat (Nivel A = válida pero identidad amarilla,
+  alcanzable con cert autofirmado actual; Nivel B verde = requiere ceremonia CA).
+
+### Decisiones confirmadas
+1. /digest y /pdf separados (Opción A).
+2. Path exacto UANATACA (/signbox/api/v1/sign) para cambio solo de host.
+3. signature_appearance formato UANATACA adoptado tal cual.
+4. Flujo async job/result replicado (la firma puede tardar, habla con device físico).
+5. attestation + zkproof en toda respuesta de firma.
