@@ -309,3 +309,97 @@ Recomendado: en el server (más recursos + registro de dispositivos).
 
 Valor de negocio: baja la barrera de adopción, centraliza la lógica correcta,
 permite agregar valor (revocación, cadena CA, auditoría), modelo cobrable por uso.
+
+---
+
+## BLOQUE 5 — Autorización en dos niveles (KUser/token)
+
+Dos pruebas de autorización complementarias, no excluyentes. Se encadenan en capas.
+
+### Comparación
+
+| | Prueba 1 (HMAC) | Prueba 2 (VaultStamping/KUser) |
+|---|---|---|
+| Qué prueba | Conocimiento del secret | Posesión que produce descifrado real |
+| Tipo | Declarativa (coincide) | Funcional (descifra) |
+| Atribución | Débil (cualquiera con secret) | Fuerte (cada KUser único por R) |
+| Verificable por tercero | No (confías en el dispositivo) | Sí (con zkSNARK, sin revelar secretos) |
+| Costo en ESP32 | Bajo (ideal) | Alto (aritmética 512-bit; zkSNARK solo en server) |
+| Uso | Día a día, rápido | Alto valor / no-repudio auditable |
+
+### Prueba 1 — HMAC (ya implementada)
+- `HMAC-SHA256("minihsm:<ts>:<nonce>", secret)` con secret de 32 bytes en NVS
+- Protecciones: ventana 30s + HMAC válido + anti-replay
+- **HARDENING: quitar `GET /token` en producción.** Hoy el dispositivo regala tokens
+  válidos sin autenticar = puerta trasera total. En producción el token lo genera el
+  serverHSM (que tiene el secret), nunca el dispositivo. El Xami solo VALIDA, no emite.
+- Pendiente: anti-replay persistente en NVS (hoy en RAM, se pierde al reiniciar)
+
+### Prueba 2 — VaultStamping / KUser (diseño, archivo: vaultStamping.js)
+
+Esquema de cifrado multiplicativo modular que DESACOPLA custodia de autorización.
+
+**Generación de claves:**
+- `KMaster = K_base.p` (base secreta + primo grande) — la autoridad
+- `KUser = K_user_inv.R` derivado de KMaster con R aleatorio (único por operación)
+- Matemática: `K_user = (K_base · R) mod p`; se guarda su inverso modular + R
+
+**Cifrado/descifrado:**
+- Cifrar con KMaster: `C = (M · K_base) mod p`
+- Descifrar con KUser: `M = (C · K_user_inv · R) mod p`
+- KMaster nunca aparece en el descifrado (el desacople)
+
+**Qué se cifra (M):** el PERMISO concreto de la operación. Ej:
+`M = "sign:digest=a3f8...:device=af811cc:exp=1781112600"`
+M es un vale de autorización que describe exactamente qué se autoriza.
+
+**Quién tiene qué (decisión confirmada):**
+- **KMaster en el serverHSM** (autoridad emisora). El servidor cifra los permisos.
+- El Xami recibe `{digest, C, KUser}` y DESCIFRA para validar.
+- Si M' descifrado es un permiso bien formado que coincide con el digest → autoriza.
+- Un KUser falso produce basura al descifrar → el descifrado ES la prueba.
+
+**Por qué es "posesión demostrable":** el token no solo coincide, DESCIFRA. Solo un
+KUser legítimamente derivado del KMaster real recupera M. Cada KUser es único (por R)
+→ atribuible. El zkSNARK encima permite demostrar a un tercero que la autorización
+fue válida SIN revelar KUser ni KMaster → no-repudio verificable independientemente.
+
+**Reparto por hardware (zkSNARK):**
+- Validación por descifrado (aritmética modular 512-bit): SÍ en el ESP32 (pesada pero factible)
+- Generación del zkSNARK (Groth16/Poseidon): SOLO en el servidor (inviable en ESP32)
+- Verificación del zkSNARK: servidor o cualquier tercero (relativamente ligera)
+
+**Nota de seguridad honesta:** el cifrado multiplicativo es lineal → débil si se
+observan muchos pares (M,C) con el mismo KMaster. Apto para autorización efímera
+(KUser de un solo uso, corta vida), NO para cifrar datos sensibles persistentes.
+
+### Integración de las dos pruebas (capas)
+
+No compiten, se complementan. Un request de firma de alto valor lleva ambas:
+
+```json
+POST /sign
+{
+  "digest": "a3f8...",
+  // Capa 1 — HMAC (transporte: integridad + frescura + anti-replay)
+  "token": "c8dde1cb...",
+  "timestamp": 1781112600,
+  "nonce": "3735927714",
+  // Capa 2 — VaultStamping (autorización demostrable)
+  "C": "...",                 // permiso cifrado por el serverHSM
+  "kuser": "K_user_inv.R"     // para que el Xami descifre el permiso
+}
+```
+
+**Orden de validación en el Xami:**
+1. HMAC primero (barato): ¿íntegro, fresco, no replay? Si falla → rechaza ya.
+2. VaultStamping después (caro): descifra C con kuser. ¿El permiso autoriza ESTE
+   digest? Si sí → firma.
+
+El HMAC es el portero rápido que filtra basura; VaultStamping es la validación
+profunda de autorización real. Se gasta el cómputo caro solo en requests que ya
+pasaron el filtro barato.
+
+- HMAC solo: rápido, pero autorización = "confía en que validé"
+- VaultStamping solo: demostrable, pero caro y sin protección de transporte/replay
+- Ambos: cada uno hace lo que mejor hace
