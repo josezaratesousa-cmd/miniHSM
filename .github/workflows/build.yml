@@ -12,18 +12,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Inyectar credenciales en sdkconfig.defaults
         run: |
-          # Agregar credenciales desde GitHub Secrets al sdkconfig.defaults
-          # Si no hay secrets configurados, el binario arranca en modo provisioning
           if [ -n "$WIFI_SSID" ]; then
             echo "CONFIG_WIFI_SSID=\"$WIFI_SSID\"" >> firmware/sdkconfig.defaults
             echo "CONFIG_WIFI_PASS=\"$WIFI_PASS\""  >> firmware/sdkconfig.defaults
             echo "WiFi inyectado desde Secrets"
           else
-            echo "Sin WiFi secrets — modo provisioning activo"
+            echo "Sin WiFi secrets — binario arranca en modo provisioning"
           fi
           if [ -n "$SERVERHSM_URL" ]; then
             echo "CONFIG_SERVERHSM_URL=\"$SERVERHSM_URL\"" >> firmware/sdkconfig.defaults
@@ -33,10 +31,10 @@ jobs:
           WIFI_PASS: ${{ secrets.WIFI_PASS }}
           SERVERHSM_URL: ${{ secrets.SERVERHSM_URL }}
 
-      - name: Build con ESP-IDF v5.2.3
-        uses: espressif/esp-idf-ci-action@v1
+      - name: Build con ESP-IDF v6.2.0
+        uses: espressif/esp-idf-ci-action@v2
         with:
-          esp_idf_version: v5.2.3
+          esp_idf_version: v6.2.0
           target: esp32s3
           path: firmware
           command: idf.py build
@@ -53,6 +51,7 @@ jobs:
             0x0000  bootloader/bootloader.bin \
             0x8000  partition_table/partition-table.bin \
             0x10000 minihsm.bin
+          echo "--- Binarios generados ---"
           ls -lh *.bin
 
       - name: Subir artefactos
@@ -76,6 +75,8 @@ jobs:
             ```
             esptool.py --chip esp32s3 --port COM7 write_flash 0x0 minihsm-merged.bin
             ```
+            Binario compilado con ESP-IDF v6.2.0 para ESP32-S3.
+
             ## Configurar WiFi (si el binario no trae credenciales)
             ```
             curl -X POST http://<IP-ESP32>/provision/wifi \
