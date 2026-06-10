@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -32,6 +33,7 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_FAIL_BIT      BIT1
 
 static int              s_retry_num = 0;
+static bool             s_connected_once = false;  /* true tras la 1a conexion exitosa */
 static httpd_handle_t   s_server    = NULL;
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -44,16 +46,32 @@ static void wifi_event_handler(void *arg, esp_event_base_t eb,
     if (eb == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (eb == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < WIFI_MAX_RETRY) {
+        if (s_connected_once) {
+            /* Ya estuvimos conectados: el WiFi se cayo en operacion.
+             * Reconectar INDEFINIDAMENTE (Opcion A). El router volvera
+             * tarde o temprano y el mini se recupera solo, sin reiniciar. */
+            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+            s_retry_num++;
+            if (s_retry_num % 10 == 1) {
+                ESP_LOGW(TAG, "WiFi perdido, reconectando indefinidamente (intento %d)...", s_retry_num);
+            }
+            /* Reconexion inmediata. Si no hay AP, el propio evento DISCONNECTED
+             * vuelve a dispararse, creando un bucle de reintentos sin bloquear el
+             * event loop. ESP-IDF espacia los intentos internamente. */
+            esp_wifi_connect();
+        } else if (s_retry_num < WIFI_MAX_RETRY) {
+            /* Arranque inicial: reintentar unas veces */
             esp_wifi_connect();
             s_retry_num++;
         } else {
+            /* Arranque fallido: marcar FAIL para disparar el portal de config */
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
     } else if (eb == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
         ESP_LOGI(TAG, "IP: " IPSTR, IP2STR(&ev->ip_info.ip));
-        s_retry_num = 0;
+        s_retry_num   = 0;
+        s_connected_once = true;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
