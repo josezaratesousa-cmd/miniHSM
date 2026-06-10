@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -13,6 +14,7 @@
 #include "vault_manager.h"
 #include "policy_engine.h"
 #include "crypto_engine.h"
+#include "version.h"
 
 static const char *TAG = "heartbeat";
 
@@ -60,7 +62,7 @@ static esp_err_t do_heartbeat(void)
     cJSON_AddStringToObject(body, "token",     token);
     cJSON_AddNumberToObject(body, "timestamp", (double)ts);
     cJSON_AddStringToObject(body, "nonce",     nonce);
-    cJSON_AddStringToObject(body, "firmware",  "2.0.0");
+    cJSON_AddStringToObject(body, "firmware",  XAMI_VERSION);
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
 
@@ -70,8 +72,8 @@ static esp_err_t do_heartbeat(void)
         .url            = url,
         .method         = HTTP_METHOD_POST,
         .timeout_ms     = 8000,
-        .skip_cert_common_name_check = true,
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);

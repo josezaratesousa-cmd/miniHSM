@@ -30,5 +30,6 @@ idf_component_register(
         esp_system
         lwip
         mbedtls
+        esp-tls
         espressif__cjson
 )
