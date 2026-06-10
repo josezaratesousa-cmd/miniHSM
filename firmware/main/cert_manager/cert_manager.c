@@ -87,10 +87,8 @@ static esp_err_t generate_selfsigned(void)
     mbedtls_x509write_cert   crt;
     mbedtls_entropy_context  entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_mpi              serial;
 
     mbedtls_x509write_crt_init(&crt);
-    mbedtls_mpi_init(&serial);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
@@ -112,7 +110,6 @@ static esp_err_t generate_selfsigned(void)
     uint8_t hash[CRYPTO_DIGEST_SIZE];
     crypto_sha256(pubkey, CRYPTO_PUBKEY_SIZE, hash);
     hash[0] &= 0x7F; /* bit mas significativo = 0 para DER INTEGER positivo */
-    mbedtls_mpi_read_binary(&serial, hash, 8);
 
     mbedtls_x509write_crt_set_version(&crt,  MBEDTLS_X509_CRT_VERSION_3);
     mbedtls_x509write_crt_set_md_alg(&crt,   MBEDTLS_MD_SHA256);
@@ -120,7 +117,7 @@ static esp_err_t generate_selfsigned(void)
     mbedtls_x509write_crt_set_issuer_key(&crt,   &pk);
     mbedtls_x509write_crt_set_subject_name(&crt, subject);
     mbedtls_x509write_crt_set_issuer_name(&crt,  subject);
-    mbedtls_x509write_crt_set_serial(&crt, &serial);
+    mbedtls_x509write_crt_set_serial_raw(&crt, hash, 8);
     mbedtls_x509write_crt_set_validity(&crt, "20240101000000", "20340101000000");
     mbedtls_x509write_crt_set_key_usage(&crt, MBEDTLS_X509_KU_DIGITAL_SIGNATURE);
     mbedtls_x509write_crt_set_basic_constraints(&crt, 0, -1);
@@ -140,7 +137,6 @@ static esp_err_t generate_selfsigned(void)
 cleanup:
     mbedtls_pk_free(&pk);
     mbedtls_x509write_crt_free(&crt);
-    mbedtls_mpi_free(&serial);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
     return (strlen(s_cert_pem) > 0) ? ESP_OK : ESP_FAIL;
@@ -153,7 +149,7 @@ esp_err_t cert_manager_init(void)
         ESP_LOGI(TAG, "No cert — generating self-signed...");
         err = generate_selfsigned();
     } else if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Cert loaded (state=)",
+        ESP_LOGI(TAG, "Cert loaded (state=%s)",
             s_state == CERT_STATE_PROVISIONED ? "PROVISIONED" : "UNPROVISIONED");
     }
     if (err == ESP_OK) s_initialized = 1;
@@ -187,7 +183,7 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
     char device_id[17];
     vault_get_device_id(device_id);
     char subject[CERT_SUBJECT_MAX];
-    snprintf(subject, sizeof(subject), "CN=MiniHSM-,O=MiniHSM,C=PE", device_id);
+    snprintf(subject, sizeof(subject), "CN=MiniHSM-%s,O=MiniHSM,C=PE", device_id);
     mbedtls_x509write_csr_set_key(&csr, &pk);
     mbedtls_x509write_csr_set_subject_name(&csr, subject);
     mbedtls_x509write_csr_set_md_alg(&csr, MBEDTLS_MD_SHA256);
@@ -198,7 +194,7 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
         result = ESP_OK;
         ESP_LOGI(TAG, "CSR OK — send to CA for signing");
     } else {
-        ESP_LOGE(TAG, "CSR failed: 0", ret);
+        ESP_LOGE(TAG, "CSR failed: %d", ret);
     }
 cleanup:
     mbedtls_pk_free(&pk);
