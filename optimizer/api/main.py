@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from minihsm.client import MiniHSMClient
 from minihsm.registry import registry
+from minihsm import device_secrets
 from signing.pades import sign_pdf
 from signing.xades import sign_xml
 from signing.cades import sign_data, verify_cades
@@ -72,8 +73,12 @@ def get_client() -> MiniHSMClient:
         )
 
     client = MiniHSMClient(host, MINIHSM_PORT)
-    if MINIHSM_SECRET:
-        client.set_secret(MINIHSM_SECRET)
+    # Secret por-device (del match, Bloque 9); fallback al global del .env
+    secret = device_secrets.get_secret(MINIHSM_DEVICE) if MINIHSM_DEVICE else None
+    if not secret:
+        secret = MINIHSM_SECRET
+    if secret:
+        client.set_secret(secret)
     return client
 
 
