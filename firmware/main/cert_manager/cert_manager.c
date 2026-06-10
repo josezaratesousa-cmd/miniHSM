@@ -9,9 +9,10 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/x509_csr.h"
 #include "mbedtls/pk.h"
+#include "mbedtls/ecp.h"
+#include "mbedtls/bignum.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
-#include "psa/crypto.h"
 
 static const char *TAG       = "cert_manager";
 static const char *NVS_NS    = "cert";
@@ -49,38 +50,34 @@ static esp_err_t nvs_load_cert(char *pem_out, cert_state_t *state_out)
     return err;
 }
 
-/* Importa privkey del vault a PSA (volatil) y envuelve en pk_context.
- * Caller DEBE llamar mbedtls_pk_free(&pk) y psa_destroy_key(key_id). */
-static int load_opaque_pk(mbedtls_pk_context *pk, psa_key_id_t *key_id_out)
+/* Carga la clave privada del vault en un mbedtls_pk_context.
+ * Usa mbedtls_ecp_read_key() que carga la clave Y calcula Q (pubkey).
+ * La clave raw se zeroiza antes de retornar. Caller debe mbedtls_pk_free(). */
+static int load_pk_from_vault(mbedtls_pk_context *pk)
 {
     uint8_t privkey[CRYPTO_PRIVKEY_SIZE];
     uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
+
     if (vault_get_privkey_raw(privkey, pubkey) != ESP_OK) {
         crypto_zeroize(privkey, sizeof(privkey));
         return -1;
     }
-    psa_key_attributes_t attrs = PSA_KEY_ATTRIBUTES_INIT;
-    psa_set_key_type(&attrs, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
-    psa_set_key_bits(&attrs, 256);
-    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_SIGN_MESSAGE);
-    psa_set_key_algorithm(&attrs, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
-    psa_key_id_t key_id;
-    psa_status_t status = psa_import_key(&attrs, privkey, CRYPTO_PRIVKEY_SIZE, &key_id);
+
+    mbedtls_pk_init(pk);
+    int ret = mbedtls_pk_setup(pk, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY));
+    if (ret != 0) goto done;
+
+    /* mbedtls_ecp_read_key: carga privkey en el keypair y calcula Q.
+     * mbedtls_pk_ec() esta deprecated en mbedTLS 3.4+ pero funciona
+     * (el flag -Wno-error=deprecated-declarations lo permite). */
+    ret = mbedtls_ecp_read_key(MBEDTLS_ECP_DP_SECP256R1,
+                                mbedtls_pk_ec(*pk),
+                                privkey, CRYPTO_PRIVKEY_SIZE);
+done:
     crypto_zeroize(privkey, sizeof(privkey));
     crypto_zeroize(pubkey,  sizeof(pubkey));
-    if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "psa_import_key failed: %d", (int)status);
-        return -(int)status;
-    }
-    mbedtls_pk_init(pk);
-    int ret = mbedtls_pk_setup_opaque(pk, key_id);
-    if (ret != 0) {
-        ESP_LOGE(TAG, "pk_setup_opaque failed: %d", ret);
-        psa_destroy_key(key_id);
-        return ret;
-    }
-    *key_id_out = key_id;
-    return 0;
+    if (ret != 0) mbedtls_pk_free(pk);
+    return ret;
 }
 
 static esp_err_t generate_selfsigned(void)
@@ -90,30 +87,44 @@ static esp_err_t generate_selfsigned(void)
     mbedtls_x509write_cert   crt;
     mbedtls_entropy_context  entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
-    psa_key_id_t             key_id = 0;
+    mbedtls_mpi              serial;
+
     mbedtls_x509write_crt_init(&crt);
+    mbedtls_mpi_init(&serial);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
                           (const unsigned char *)"minihsm_cert", 12);
-    if (load_opaque_pk(&pk, &key_id) != 0) {
+
+    if (load_pk_from_vault(&pk) != 0) {
         ESP_LOGE(TAG, "Failed to load keypair");
         goto cleanup;
     }
+
     char device_id[17];
     vault_get_device_id(device_id);
     char subject[CERT_SUBJECT_MAX];
     snprintf(subject, sizeof(subject), "CN=MiniHSM-%s,O=MiniHSM,C=PE", device_id);
+
+    /* Serial = primeros 8 bytes del hash de la pubkey (siempre positivo) */
+    uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
+    vault_get_pubkey(pubkey);
+    uint8_t hash[CRYPTO_DIGEST_SIZE];
+    crypto_sha256(pubkey, CRYPTO_PUBKEY_SIZE, hash);
+    hash[0] &= 0x7F; /* bit mas significativo = 0 para DER INTEGER positivo */
+    mbedtls_mpi_read_binary(&serial, hash, 8);
+
     mbedtls_x509write_crt_set_version(&crt,  MBEDTLS_X509_CRT_VERSION_3);
     mbedtls_x509write_crt_set_md_alg(&crt,   MBEDTLS_MD_SHA256);
     mbedtls_x509write_crt_set_subject_key(&crt,  &pk);
     mbedtls_x509write_crt_set_issuer_key(&crt,   &pk);
     mbedtls_x509write_crt_set_subject_name(&crt, subject);
     mbedtls_x509write_crt_set_issuer_name(&crt,  subject);
-    mbedtls_x509write_crt_set_serial_new(&crt);
+    mbedtls_x509write_crt_set_serial(&crt, &serial);
     mbedtls_x509write_crt_set_validity(&crt, "20240101000000", "20340101000000");
     mbedtls_x509write_crt_set_key_usage(&crt, MBEDTLS_X509_KU_DIGITAL_SIGNATURE);
     mbedtls_x509write_crt_set_basic_constraints(&crt, 0, -1);
+
     unsigned char pem_buf[CERT_PEM_MAX_SIZE];
     int ret = mbedtls_x509write_crt_pem(&crt, pem_buf, sizeof(pem_buf),
                                          mbedtls_ctr_drbg_random, &ctr_drbg);
@@ -125,10 +136,11 @@ static esp_err_t generate_selfsigned(void)
     s_state = CERT_STATE_UNPROVISIONED;
     nvs_save_cert(s_cert_pem, s_state);
     ESP_LOGI(TAG, "Self-signed cert OK");
+
 cleanup:
     mbedtls_pk_free(&pk);
-    if (key_id) psa_destroy_key(key_id);
     mbedtls_x509write_crt_free(&crt);
+    mbedtls_mpi_free(&serial);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
     return (strlen(s_cert_pem) > 0) ? ESP_OK : ESP_FAIL;
@@ -138,10 +150,10 @@ esp_err_t cert_manager_init(void)
 {
     esp_err_t err = nvs_load_cert(s_cert_pem, &s_state);
     if (err == ESP_ERR_NVS_NOT_FOUND || strlen(s_cert_pem) == 0) {
-        ESP_LOGI(TAG, "No cert in NVS — generating self-signed...");
+        ESP_LOGI(TAG, "No cert — generating self-signed...");
         err = generate_selfsigned();
     } else if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Cert loaded (state=%s)",
+        ESP_LOGI(TAG, "Cert loaded (state=)",
             s_state == CERT_STATE_PROVISIONED ? "PROVISIONED" : "UNPROVISIONED");
     }
     if (err == ESP_OK) s_initialized = 1;
@@ -165,18 +177,17 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
     mbedtls_x509write_csr    csr;
     mbedtls_entropy_context  entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
-    psa_key_id_t             key_id = 0;
     mbedtls_x509write_csr_init(&csr);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
                           (const unsigned char *)"minihsm_csr", 11);
     esp_err_t result = ESP_FAIL;
-    if (load_opaque_pk(&pk, &key_id) != 0) goto cleanup;
+    if (load_pk_from_vault(&pk) != 0) goto cleanup;
     char device_id[17];
     vault_get_device_id(device_id);
     char subject[CERT_SUBJECT_MAX];
-    snprintf(subject, sizeof(subject), "CN=MiniHSM-%s,O=MiniHSM,C=PE", device_id);
+    snprintf(subject, sizeof(subject), "CN=MiniHSM-,O=MiniHSM,C=PE", device_id);
     mbedtls_x509write_csr_set_key(&csr, &pk);
     mbedtls_x509write_csr_set_subject_name(&csr, subject);
     mbedtls_x509write_csr_set_md_alg(&csr, MBEDTLS_MD_SHA256);
@@ -187,11 +198,10 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
         result = ESP_OK;
         ESP_LOGI(TAG, "CSR OK — send to CA for signing");
     } else {
-        ESP_LOGE(TAG, "CSR failed: %d", ret);
+        ESP_LOGE(TAG, "CSR failed: 0", ret);
     }
 cleanup:
     mbedtls_pk_free(&pk);
-    if (key_id) psa_destroy_key(key_id);
     mbedtls_x509write_csr_free(&csr);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);

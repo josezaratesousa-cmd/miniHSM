@@ -488,6 +488,9 @@ static esp_err_t handler_token(httpd_req_t *req)
 /*  HTTP Server                                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
+static esp_err_t handler_provision_wifi(httpd_req_t *req);
+static esp_err_t handler_provision_wifi_clear(httpd_req_t *req);
+
 esp_err_t network_http_server_start(void)
 {
     httpd_config_t config  = HTTPD_DEFAULT_CONFIG();
