@@ -1003,3 +1003,47 @@ log se sella en blockchain.
 ### Integración con Bloque 5 (anti-replay)
 El buffer anti-replay del KUser (10000 hashes rotativos) tiene el MISMO problema de
 persistencia. Misma solución: persistir en NVS. Reservar partición (~320KB).
+
+---
+
+## BLOQUE 9 — Emparejamiento (match) y provisioning de secretos
+
+Mecanismo por el que un Xami se da de alta en el server y recibe sus secretos.
+Resuelve: como comparten el HMAC secret device y server.
+
+### Modelo de confianza (por modelo)
+- **Xami-A1 (sin chip):** confianza con verificacion a posteriori.
+  - El server CONFIA en la pubkey que envia el device (no la tenia de antes).
+  - Pero verifica que el deviceID sea uno de los VENDIDOS (lista de legitimos).
+  - Si alguien engana: se detecta y se BLOQUEA ese deviceID.
+  - Primera config la hace un empleado de confianza (simplificacion para arrancar).
+- **Xami-A2/A3 (con chip ATECC):** MATRICULADOS de fabrica. La pubkey nace en el chip
+  y se registra al fabricar -> garantia criptografica fuerte.
+- El modelo de seguridad ESCALA con el hardware.
+
+### Flujo del match (A1)
+1. Mini arranca con internet -> POST /devices/match {deviceId, pubkey, ip, firma}
+2. Server verifica: deviceID en lista de vendidos? firma valida contra pubkey?
+   (proof of possession: solo el dueno de la privada pudo firmar)
+3. Si cuadra: genera secretos (HMAC; luego KMaster, token stamping), los CIFRA
+   con la pubkey del mini, los envia en la respuesta
+4. El mini los descifra con su PRIVADA (nunca salio) y los guarda en NVS
+5. Ambos comparten el HMAC secret -> server genera tokens, mini valida
+
+### Propiedades
+- Secret viaja CIFRADO con la pubkey del mini -> solo el mini lo descifra.
+- La clave privada NUNCA viaja (raiz de confianza).
+- Server verifica identidad antes de dar secretos. Puede BLOQUEAR un deviceID.
+
+### Detalle tecnico (importante)
+La pubkey es EC P-256, NO RSA. Las claves EC no cifran directo. Para "cifrar con la
+pubkey" se usa ECIES: ECDH efimero + clave simetrica derivada + AES-GCM. Estandar.
+
+### Piezas (Fase 1)
+- Firmware: endpoint de match, descifra secretos con su privada, guarda en NVS.
+- Server: /devices/match verifica deviceID + proof of possession, genera y cifra
+  secretos con ECIES, responde.
+- Lista de vendidos (simple por ahora; dev = device propio).
+
+### Pendiente produccion
+- Lista de vendidos real (BD) + flujo de bloqueo. A2/A3 matricula de fabrica en chip.
