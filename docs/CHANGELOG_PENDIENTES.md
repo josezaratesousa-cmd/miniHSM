@@ -1047,3 +1047,19 @@ pubkey" se usa ECIES: ECDH efimero + clave simetrica derivada + AES-GCM. Estanda
 
 ### Pendiente produccion
 - Lista de vendidos real (BD) + flujo de bloqueo. A2/A3 matricula de fabrica en chip.
+
+### Bloque 9 — Estado de implementación (Capa 1 y 2 hechas)
+- Capa 1 (server): /devices/match verifica deviceID vendido + proof of possession
+  (ECDSA P-256 sobre challenge "deviceId:ts:nonce"). PROBADO e2e: legitimo OK,
+  no-vendido 403, firma falsa 401. Modulos: sold_devices.py, crypto_match.py.
+- Capa 2 (ECIES): cifrado de secretos. Esquema EXACTO (server y firmware deben coincidir):
+  * ECDH efimero P-256
+  * HKDF-SHA256, salt = 32 bytes de ceros (explicito), info = "xami-match-v1"
+  * AES-256-GCM, IV 12 bytes, tag 16 bytes
+  * blob = eph_pub(65) || iv(12) || ciphertext || tag(16), todo hex
+  * Server (crypto_match.py: ecies_encrypt) PROBADO round-trip.
+  * Firmware (match_engine.c: match_ecies_decrypt) con mbedTLS. Validar al compilar/flashear.
+- PENDIENTE: cablear el endpoint de match en el FIRMWARE (que el device llame al server
+  en el arranque, reciba el blob, lo descifre con match_ecies_decrypt, guarde el secret).
+- PENDIENTE: que el server /devices/match GENERE el secret y lo devuelva cifrado (hoy
+  Capa 1 solo verifica identidad; falta sumar ecies_encrypt del secret en la respuesta).
