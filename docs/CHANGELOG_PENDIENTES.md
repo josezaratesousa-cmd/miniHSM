@@ -608,3 +608,22 @@ El sistema no depende de un servicio externo.
 ### Secreto a provisionar (se suma a la lista)
 STAMPING_API_KEY es global por ahora. Con `/auth` de tenant, cada tenant tendrá su
 bearer. Se suma a: secret HMAC, secreto VaultStamping, token stamping.
+
+### Mecanismo real de async=true (Merkle batch anchoring) — aclarado
+stamping.io con async=true funciona así:
+1. ENCOLA el evidence y devuelve el trxid (promesa) al instante → CERO latencia.
+2. No hace nada más en ese momento.
+3. Cada ~5 minutos junta todos los evidence encolados.
+4. Construye un MERKLE TREE con todos ellos.
+5. Registra solo el HASH RAÍZ del árbol en varias blockchains (una sola tx por lote).
+
+Implicaciones:
+- **Cero latencia:** el Xami/serverHSM solo encola y sigue, sin esperar blockchain.
+- **Escala:** miles de sellos se anclan con una sola transacción (la raíz Merkle).
+- **Prueba individual conservada:** con la Merkle proof (ruta del evidence hasta la
+  raíz), cada sello se demuestra incluido en el lote, sin revelar los demás.
+- **Garantía temporal = ventana del lote (~5 min):** el sello prueba "existía antes
+  de que se cerrara este lote", no un timestamp al segundo. Aceptable para TSA.
+- **Verificación profunda (opcional, para disputas):** consultar a stamping.io la
+  Merkle proof del evidence tras cerrar el lote → evidence → ruta → raíz → tx blockchain.
+  Para uso normal, guardar el trxid basta.
