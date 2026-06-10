@@ -510,6 +510,8 @@ esp_err_t network_http_server_start(void)
         { .uri = "/pubkey", .method = HTTP_GET,  .handler = handler_pubkey    },
         { .uri = "/audit",  .method = HTTP_GET,  .handler = handler_audit     },
         { .uri = "/token",  .method = HTTP_GET,  .handler = handler_token     },
+        { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
+        { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
     };
 
     for (size_t i = 0; i < sizeof(uris)/sizeof(uris[0]); i++)

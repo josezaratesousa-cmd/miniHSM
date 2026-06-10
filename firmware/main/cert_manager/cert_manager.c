@@ -8,8 +8,6 @@
 #include "vault_manager.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/x509_csr.h"
-#include "mbedtls/x509write_crt.h"
-#include "mbedtls/x509write_csr.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
