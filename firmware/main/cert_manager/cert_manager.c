@@ -11,15 +11,13 @@
 #include "vault_manager.h"
 
 /*
- * mbedTLS 4.x (ESP-IDF 6.x) reorganizo los headers bajo TF-PSA-Crypto.
- * Los headers de X.509 (parse/write) siguen accesibles via mbedtls/x509_crt.h
- * pero los de ECC, entropy y ctr_drbg fueron absorbidos por PSA.
- * Este archivo usa PSA para crypto y mbedtls solo para X.509 write/parse.
+ * mbedTLS 4.x (ESP-IDF 6.x): x509write_crt.h y x509write_csr.h NO existen
+ * como headers publicos. Las declaraciones de mbedtls_x509write_cert y
+ * mbedtls_x509write_csr estan incluidas directamente en x509_crt.h / x509_csr.h.
+ * entropy.h, ctr_drbg.h, ecp.h fueron absorbidos por PSA.
  */
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/x509_csr.h"
-#include "mbedtls/x509write_crt.h"
-#include "mbedtls/x509write_csr.h"
 #include "mbedtls/pk.h"
 #include "psa/crypto.h"
 
@@ -32,9 +30,9 @@ static char         s_cert_pem[CERT_PEM_MAX_SIZE];
 static cert_state_t s_state       = CERT_STATE_UNPROVISIONED;
 static int          s_initialized = 0;
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  NVS                                                                         */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------ */
+/*  NVS                                                                 */
+/* ------------------------------------------------------------------ */
 
 static esp_err_t nvs_save_cert(const char *pem, cert_state_t state)
 {
@@ -64,20 +62,19 @@ static esp_err_t nvs_load_cert(char *pem_out, cert_state_t *state_out)
     return err;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  RNG wrapper para mbedtls_x509write usando PSA                              */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------ */
+/*  RNG wrapper PSA -> mbedtls_x509write                               */
+/* ------------------------------------------------------------------ */
 
 static int psa_rng_for_mbedtls(void *ctx, unsigned char *buf, size_t len)
 {
     (void)ctx;
-    psa_status_t s = psa_generate_random(buf, len);
-    return (s == PSA_SUCCESS) ? 0 : -1;
+    return (psa_generate_random(buf, len) == PSA_SUCCESS) ? 0 : -1;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  Carga keypair en mbedtls_pk_context usando PSA export                      */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------ */
+/*  Carga keypair en mbedtls_pk_context                                */
+/* ------------------------------------------------------------------ */
 
 static int load_pk_from_vault(mbedtls_pk_context *pk)
 {
@@ -86,71 +83,35 @@ static int load_pk_from_vault(mbedtls_pk_context *pk)
 
     if (vault_get_privkey_raw(privkey, pubkey) != ESP_OK) return -1;
 
-    /*
-     * mbedtls_pk con ECKEY en mbedTLS 4.x: los campos internos del
-     * ecp_keypair se acceden via PSA internamente. Usamos la API publica
-     * mbedtls_pk_parse_key para cargar la clave privada desde DER/raw.
-     *
-     * Alternativa mas robusta: construir un PEM temporal de la clave privada
-     * en formato SEC1 y parsearlo con mbedtls_pk_parse_key.
-     */
-
-    /* Construir clave privada en formato SEC1 DER para mbedtls_pk_parse_key.
-       SEC1 P-256 privkey DER = header (7 bytes) + privkey (32) + pubkey tag + pubkey (65) */
-    unsigned char sec1_der[120];
-    size_t sec1_len = 0;
-
-    /* Header SEC1 para P-256:
-       30 77          SEQUENCE
-         02 01 01     version = 1
-         04 20        OCTET STRING, 32 bytes (privkey)
-           <32 bytes>
-         a1 5b        [1] EXPLICIT (optional pubkey)
-           03 59      BIT STRING
-             00       no unused bits
-             04       uncompressed point prefix
-             <64 bytes X||Y>
-    */
-    const unsigned char hdr[] = {
-        0x30, 0x77,
-        0x02, 0x01, 0x01,
-        0x04, 0x20
-    };
-    memcpy(sec1_der, hdr, sizeof(hdr));
-    sec1_len = sizeof(hdr);
-    memcpy(sec1_der + sec1_len, privkey, 32);
-    sec1_len += 32;
-
-    const unsigned char pub_hdr[] = {
-        0xa1, 0x5b,
-        0x03, 0x59,
-        0x00
-    };
-    memcpy(sec1_der + sec1_len, pub_hdr, sizeof(pub_hdr));
-    sec1_len += sizeof(pub_hdr);
-    memcpy(sec1_der + sec1_len, pubkey, 65);  /* 0x04 || X || Y */
-    sec1_len += 65;
-
-    /* Total: 7 + 32 + 5 + 65 = 109 bytes. sec1_der[1] = total - 2 = 107 = 0x6b */
-    sec1_der[1] = (unsigned char)(sec1_len - 2);
+    /* SEC1 DER para P-256:
+       SEQUENCE { version=1, privkey OCTET STRING, [1] pubkey BIT STRING }
+       Total fijo: 7 + 32 + 5 + 65 = 109 bytes */
+    unsigned char der[120];
+    const unsigned char hdr[] = { 0x30,0x6b, 0x02,0x01,0x01, 0x04,0x20 };
+    const unsigned char phdr[] = { 0xa1,0x44, 0x03,0x42, 0x00 };
+    size_t pos = 0;
+    memcpy(der + pos, hdr,  sizeof(hdr));  pos += sizeof(hdr);
+    memcpy(der + pos, privkey, 32);         pos += 32;
+    memcpy(der + pos, phdr, sizeof(phdr)); pos += sizeof(phdr);
+    memcpy(der + pos, pubkey, 65);          pos += 65;
+    /* der[1] = total_len - 2 = 107 = 0x6b (already set in hdr) */
 
     mbedtls_pk_init(pk);
-    int ret = mbedtls_pk_parse_key(pk, sec1_der, sec1_len, NULL, 0,
+    int ret = mbedtls_pk_parse_key(pk, der, pos, NULL, 0,
                                     psa_rng_for_mbedtls, NULL);
-
     crypto_zeroize(privkey, sizeof(privkey));
-    crypto_zeroize(sec1_der, sizeof(sec1_der));
+    crypto_zeroize(der, sizeof(der));
 
     if (ret != 0) {
-        ESP_LOGE(TAG, "mbedtls_pk_parse_key failed: -0x%04X", (unsigned)-ret);
+        ESP_LOGE(TAG, "pk_parse_key failed: -0x%04X", (unsigned)-ret);
         mbedtls_pk_free(pk);
     }
     return ret;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  Genera certificado autofirmado                                              */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------ */
+/*  Genera certificado autofirmado                                      */
+/* ------------------------------------------------------------------ */
 
 static esp_err_t generate_selfsigned(void)
 {
@@ -158,7 +119,6 @@ static esp_err_t generate_selfsigned(void)
 
     mbedtls_pk_context     pk;
     mbedtls_x509write_cert crt;
-
     mbedtls_x509write_crt_init(&crt);
     esp_err_t result = ESP_FAIL;
 
@@ -172,12 +132,12 @@ static esp_err_t generate_selfsigned(void)
     char subject[CERT_SUBJECT_MAX];
     snprintf(subject, sizeof(subject), "CN=MiniHSM-%s,O=MiniHSM,C=PE", device_id);
 
-    mbedtls_x509write_crt_set_version(&crt, MBEDTLS_X509_CRT_VERSION_3);
-    mbedtls_x509write_crt_set_md_alg(&crt, MBEDTLS_MD_SHA256);
-    mbedtls_x509write_crt_set_subject_key(&crt, &pk);
-    mbedtls_x509write_crt_set_issuer_key(&crt, &pk);
+    mbedtls_x509write_crt_set_version(&crt,     MBEDTLS_X509_CRT_VERSION_3);
+    mbedtls_x509write_crt_set_md_alg(&crt,      MBEDTLS_MD_SHA256);
+    mbedtls_x509write_crt_set_subject_key(&crt,  &pk);
+    mbedtls_x509write_crt_set_issuer_key(&crt,   &pk);
     mbedtls_x509write_crt_set_subject_name(&crt, subject);
-    mbedtls_x509write_crt_set_issuer_name(&crt, subject);
+    mbedtls_x509write_crt_set_issuer_name(&crt,  subject);
     mbedtls_x509write_crt_set_serial_new(&crt);
     mbedtls_x509write_crt_set_validity(&crt, "20240101000000", "20340101000000");
     mbedtls_x509write_crt_set_key_usage(&crt, MBEDTLS_X509_KU_DIGITAL_SIGNATURE);
@@ -194,7 +154,7 @@ static esp_err_t generate_selfsigned(void)
     strncpy(s_cert_pem, (char *)pem_buf, CERT_PEM_MAX_SIZE - 1);
     s_state = CERT_STATE_UNPROVISIONED;
     nvs_save_cert(s_cert_pem, s_state);
-    ESP_LOGI(TAG, "Self-signed certificate generated OK");
+    ESP_LOGI(TAG, "Self-signed cert generated OK");
     result = ESP_OK;
 
 cleanup:
@@ -203,22 +163,19 @@ cleanup:
     return result;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  API publica                                                                 */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------ */
+/*  API publica                                                         */
+/* ------------------------------------------------------------------ */
 
 esp_err_t cert_manager_init(void)
 {
     esp_err_t err = nvs_load_cert(s_cert_pem, &s_state);
-
     if (err == ESP_ERR_NVS_NOT_FOUND || strlen(s_cert_pem) == 0) {
-        ESP_LOGI(TAG, "No cert found, generating self-signed...");
         err = generate_selfsigned();
     } else if (err == ESP_OK) {
         ESP_LOGI(TAG, "Cert loaded (state=%s)",
             s_state == CERT_STATE_PROVISIONED ? "PROVISIONED" : "UNPROVISIONED");
     }
-
     if (err == ESP_OK) s_initialized = 1;
     return err;
 }
@@ -238,7 +195,6 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
 
     mbedtls_pk_context    pk;
     mbedtls_x509write_csr csr;
-
     mbedtls_x509write_csr_init(&csr);
     esp_err_t result = ESP_FAIL;
 
@@ -249,20 +205,15 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
     char subject[CERT_SUBJECT_MAX];
     snprintf(subject, sizeof(subject), "CN=MiniHSM-%s,O=MiniHSM,C=PE", device_id);
 
-    mbedtls_x509write_csr_set_key(&csr, &pk);
+    mbedtls_x509write_csr_set_key(&csr,          &pk);
     mbedtls_x509write_csr_set_subject_name(&csr, subject);
-    mbedtls_x509write_csr_set_md_alg(&csr, MBEDTLS_MD_SHA256);
-    mbedtls_x509write_csr_set_key_usage(&csr, MBEDTLS_X509_KU_DIGITAL_SIGNATURE);
+    mbedtls_x509write_csr_set_md_alg(&csr,       MBEDTLS_MD_SHA256);
+    mbedtls_x509write_csr_set_key_usage(&csr,    MBEDTLS_X509_KU_DIGITAL_SIGNATURE);
 
     int ret = mbedtls_x509write_csr_pem(&csr, (unsigned char *)csr_out,
-                                         csr_buf_size,
-                                         psa_rng_for_mbedtls, NULL);
-    if (ret == 0) {
-        result = ESP_OK;
-        ESP_LOGI(TAG, "CSR generated OK");
-    } else {
-        ESP_LOGE(TAG, "CSR pem failed: -0x%04X", (unsigned)-ret);
-    }
+                                         csr_buf_size, psa_rng_for_mbedtls, NULL);
+    if (ret == 0) { result = ESP_OK; ESP_LOGI(TAG, "CSR generated OK"); }
+    else          { ESP_LOGE(TAG, "CSR pem failed: -0x%04X", (unsigned)-ret); }
 
 cleanup:
     mbedtls_pk_free(&pk);
@@ -273,20 +224,11 @@ cleanup:
 esp_err_t cert_load_ca_signed(const char *cert_pem, size_t cert_len)
 {
     if (!s_initialized) return ESP_ERR_INVALID_STATE;
-
-    mbedtls_x509_crt new_cert;
-    mbedtls_x509_crt_init(&new_cert);
-
-    int ret = mbedtls_x509_crt_parse(&new_cert,
-                                      (const unsigned char *)cert_pem,
-                                      cert_len + 1);
-    mbedtls_x509_crt_free(&new_cert);
-
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Failed to parse cert: -0x%04X", (unsigned)-ret);
-        return ESP_ERR_INVALID_ARG;
-    }
-
+    mbedtls_x509_crt c;
+    mbedtls_x509_crt_init(&c);
+    int ret = mbedtls_x509_crt_parse(&c, (const unsigned char *)cert_pem, cert_len + 1);
+    mbedtls_x509_crt_free(&c);
+    if (ret != 0) { ESP_LOGE(TAG, "Parse cert failed: -0x%04X", (unsigned)-ret); return ESP_ERR_INVALID_ARG; }
     strncpy(s_cert_pem, cert_pem, CERT_PEM_MAX_SIZE - 1);
     s_cert_pem[CERT_PEM_MAX_SIZE - 1] = '\0';
     s_state = CERT_STATE_PROVISIONED;
@@ -295,10 +237,7 @@ esp_err_t cert_load_ca_signed(const char *cert_pem, size_t cert_len)
     return ESP_OK;
 }
 
-cert_state_t cert_get_state(void)
-{
-    return s_state;
-}
+cert_state_t cert_get_state(void) { return s_state; }
 
 esp_err_t cert_get_fingerprint(char *fingerprint_out)
 {

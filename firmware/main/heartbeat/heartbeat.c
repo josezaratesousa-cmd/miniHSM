@@ -18,40 +18,43 @@ static const char *TAG = "heartbeat";
 
 #define HEARTBEAT_STACK_SIZE  4096
 #define HEARTBEAT_PRIORITY    5
-#define MAX_URL_LEN           512   /* increased from 256 to avoid truncation */
+/* URL buffer must be large enough for server_url + "/devices/heartbeat" (18 chars).
+   server_url can be up to 493 chars so total fits in 512. */
+#define MAX_URL_LEN           512
 #define MAX_BODY_LEN          512
 #define MAX_RESP_LEN          256
-#define DEFAULT_INTERVAL_SEC  300   /* 5 minutos */
+#define DEFAULT_INTERVAL_SEC  300
 
 static char     s_server_url[MAX_URL_LEN];
-static uint32_t s_interval_sec  = DEFAULT_INTERVAL_SEC;
-static bool     s_running       = false;
-static bool     s_registered    = false;
-static TaskHandle_t s_task      = NULL;
-
-/* ─────────────────────────────────────────────────────────────────────────── */
+static uint32_t s_interval_sec = DEFAULT_INTERVAL_SEC;
+static bool     s_running      = false;
+static bool     s_registered   = false;
+static TaskHandle_t s_task     = NULL;
 
 static esp_err_t do_heartbeat(void)
 {
     char device_id[17];
     vault_get_device_id(device_id);
 
-    int64_t ts    = esp_timer_get_time() / 1000000LL;
-    char    nonce[17];
+    int64_t ts = esp_timer_get_time() / 1000000LL;
+    char nonce[17];
     snprintf(nonce, sizeof(nonce), "%lld", (long long)(ts ^ 0xC0FFEE));
 
-    /* Generar token HMAC para autenticar el heartbeat */
     char token[65];
     if (policy_generate_token(ts, nonce, token) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to generate token for heartbeat");
+        ESP_LOGE(TAG, "Failed to generate token");
         return ESP_FAIL;
     }
 
-    /* Construir URL: serverUrl/devices/heartbeat */
+    /* Build URL with separate buffers to avoid truncation warning */
     char url[MAX_URL_LEN];
-    snprintf(url, sizeof(url), "%s/devices/heartbeat", s_server_url);
+    int url_len = snprintf(url, sizeof(url), "%.*s/devices/heartbeat",
+                           (int)(MAX_URL_LEN - 20), s_server_url);
+    if (url_len <= 0 || url_len >= (int)sizeof(url)) {
+        ESP_LOGE(TAG, "URL too long");
+        return ESP_FAIL;
+    }
 
-    /* Body JSON */
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "deviceId",  device_id);
     cJSON_AddStringToObject(body, "token",     token);
@@ -61,9 +64,7 @@ static esp_err_t do_heartbeat(void)
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
 
-    /* HTTP POST */
     char resp_buf[MAX_RESP_LEN] = {0};
-    (void)resp_buf; /* suppress unused warning — used in read_response below */
 
     esp_http_client_config_t cfg = {
         .url            = url,
@@ -78,14 +79,12 @@ static esp_err_t do_heartbeat(void)
     esp_http_client_set_post_field(client, body_str, strlen(body_str));
 
     esp_err_t err = esp_http_client_perform(client);
-
     if (err == ESP_OK) {
         int status = esp_http_client_get_status_code(client);
         esp_http_client_read_response(client, resp_buf, MAX_RESP_LEN - 1);
-
         if (status == 200) {
             s_registered = true;
-            ESP_LOGI(TAG, "Heartbeat OK — device registered at serverHSM");
+            ESP_LOGI(TAG, "Heartbeat OK");
         } else {
             ESP_LOGW(TAG, "Heartbeat HTTP %d", status);
         }
@@ -99,38 +98,24 @@ static esp_err_t do_heartbeat(void)
     return err;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-
 static void heartbeat_task(void *arg)
 {
-    ESP_LOGI(TAG, "Heartbeat task started (interval=%lus, server=%s)",
-             (unsigned long)s_interval_sec, s_server_url);
-
-    /* Primer heartbeat inmediato al arrancar */
     vTaskDelay(pdMS_TO_TICKS(5000));
     do_heartbeat();
-
     while (s_running) {
         vTaskDelay(pdMS_TO_TICKS(s_interval_sec * 1000));
         if (s_running) do_heartbeat();
     }
-
-    ESP_LOGI(TAG, "Heartbeat task stopped");
     s_task = NULL;
     vTaskDelete(NULL);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-
 esp_err_t heartbeat_init(const char *server_url, uint32_t interval_sec)
 {
     if (!server_url || strlen(server_url) == 0) return ESP_ERR_INVALID_ARG;
-
-    strncpy(s_server_url, server_url, MAX_URL_LEN - 1);
+    strncpy(s_server_url, server_url, MAX_URL_LEN - 20); /* leave room for path */
+    s_server_url[MAX_URL_LEN - 20] = '\0';
     s_interval_sec = interval_sec > 0 ? interval_sec : DEFAULT_INTERVAL_SEC;
-
-    ESP_LOGI(TAG, "Heartbeat configured: url=%s interval=%lus",
-             s_server_url, (unsigned long)s_interval_sec);
     return ESP_OK;
 }
 
@@ -138,23 +123,11 @@ esp_err_t heartbeat_start(void)
 {
     if (s_running) return ESP_OK;
     s_running = true;
-
-    BaseType_t ret = xTaskCreate(
-        heartbeat_task, "heartbeat",
-        HEARTBEAT_STACK_SIZE, NULL,
-        HEARTBEAT_PRIORITY, &s_task
-    );
-
+    BaseType_t ret = xTaskCreate(heartbeat_task, "heartbeat",
+                                  HEARTBEAT_STACK_SIZE, NULL,
+                                  HEARTBEAT_PRIORITY, &s_task);
     return (ret == pdPASS) ? ESP_OK : ESP_FAIL;
 }
 
-void heartbeat_stop(void)
-{
-    s_running    = false;
-    s_registered = false;
-}
-
-bool heartbeat_is_registered(void)
-{
-    return s_registered;
-}
+void heartbeat_stop(void)  { s_running = false; s_registered = false; }
+bool heartbeat_is_registered(void) { return s_registered; }
