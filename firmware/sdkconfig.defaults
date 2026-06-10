@@ -10,10 +10,8 @@ CONFIG_WIFI_PASS=""
 CONFIG_SERVERHSM_URL="https://fileserver.locker/serverHSM/api"
 CONFIG_HEARTBEAT_INTERVAL_SEC=300
 
-# ESP32-S3 — Flash 16MB, PSRAM 8MB
+# ESP32-S3 — Flash 16MB (PSRAM desactivada: no es necesaria y causaba panic en arranque)
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-CONFIG_SPIRAM_SUPPORT=y
-CONFIG_ESP32S3_SPIRAM_SUPPORT=y
 
 # mbedTLS X.509 write — necesario para cert_manager (cert autofirmado + CSR)
 CONFIG_MBEDTLS_X509_CRT_WRITE_C=y
