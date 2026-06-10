@@ -436,22 +436,6 @@ static esp_err_t handler_cert_load(httpd_req_t *req)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  GET /pubkey                                                                 */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-static esp_err_t handler_pubkey(httpd_req_t *req)
-{
-    uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
-    vault_get_pubkey(pubkey);
-    char pubkey_hex[CRYPTO_PUBKEY_SIZE * 2 + 1];
-    crypto_bytes_to_hex(pubkey, CRYPTO_PUBKEY_SIZE, pubkey_hex);
-    char resp[256];
-    snprintf(resp, sizeof(resp), "{\"pubkey\":\"%s\"}", pubkey_hex);
-    send_json(req, 200, resp);
-    return ESP_OK;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
 /*  GET /audit                                                                  */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -490,7 +474,6 @@ esp_err_t network_http_server_start(void)
         { .uri = "/csr",    .method = HTTP_GET,  .handler = handler_csr       },
         { .uri = "/device", .method = HTTP_GET,  .handler = handler_device    },
         { .uri = "/health", .method = HTTP_GET,  .handler = handler_health    },
-        { .uri = "/pubkey", .method = HTTP_GET,  .handler = handler_pubkey    },
         { .uri = "/audit",  .method = HTTP_GET,  .handler = handler_audit     },
         { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
         { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
@@ -502,7 +485,7 @@ esp_err_t network_http_server_start(void)
 
     ESP_LOGI(TAG, "HTTP server started");
     ESP_LOGI(TAG, "POST: /sign /verify /cert");
-    ESP_LOGI(TAG, "GET : /cert /csr /device /health /pubkey /audit");
+    ESP_LOGI(TAG, "GET : /cert /csr /device /health /audit");
     return ESP_OK;
 }
 
