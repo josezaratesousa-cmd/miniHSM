@@ -537,3 +537,74 @@ POST /provision/reconfigure   reconfiguracion remota (requiere KUser admin)
 
 Principio aplicado: una sola fuente de identidad (la fuerte). La pubkey en /device,
 que evolucionara a Verifiable Credential con proof of possession (Bloque 3).
+
+---
+
+## BLOQUE 7 — Sellado de tiempo en blockchain (stamping.io)
+
+Atestación de tiempo independiente y pública vía blockchain (TSA real). Resuelve la
+debilidad del reloj del dispositivo: el sello en blockchain no se puede falsificar
+ni retroceder. Es el "sellado TSA" que estaba en la documentación original (PAdES LT/LTA).
+
+### Configuración (probado y funcionando)
+- **STAMPING_API_KEY** en el `.env` del serverHSM, global para todos POR AHORA.
+- Después: endpoint `/auth` de tenant para crear bearer tokens por tenant.
+- **El token va como BEARER en el header** `Authorization: Bearer <key>`, NO en el
+  payload. Más seguro. PROBADO: stamping.io lo acepta así (code 200).
+
+### Quién llama
+El **serverHSM** hace la llamada a stamping.io (tiene internet, maneja la key).
+El miniHSM no sale a internet para esto.
+
+### Cuándo se sella (IMPORTANTE — definición de alcance)
+El sellado ocurre **cada vez que se pide información externa al device**, no solo logs:
+- Cuando se pide el **log de auditoría** → se sella la atestación del log
+- Cuando se pide **información del device** (/device) → se sella esa atestación
+- Regla general: **toda entrega de información externa lleva su sellado de tiempo**.
+  Cada respuesta verificable queda anclada en blockchain con su momento.
+
+### trxid = sha1(evidence) — promesa inmediata (PROBADO)
+Con `async=true`, el trxid NO hay que esperarlo: es `sha1(evidence)`, calculable al
+instante. Es una promesa determinística; stamping.io ejecuta el sellado en blockchain
+después, bajo ese mismo trxid.
+- Auto-verificable: cualquiera con el evidence recalcula sha1 y confirma el trxid.
+- VERIFICADO en prueba real: trxid local == trxid devuelto por stamping.io.
+
+### Payload (corregido — sin reference)
+```
+POST https://api.stamping.io/stamp/
+Header: Authorization: Bearer <STAMPING_API_KEY>
+Body:
+{
+  "evidence": "<hash firmado de la atestacion (64 hex sha256)>",
+  "data": "<base64(attestation)>",
+  "transactionType": "<tipo de evento>",
+  "async": "true",
+  "external_key": "<deviceId, ej Xami-A1-af811cc...>",
+  "subject": "<descripcion legible>"
+}
+```
+- **reference: NO se usa** (descartado el encadenamiento de trxids).
+- **external_key = deviceId**: permite buscar en stamping.io todos los sellos de un
+  dispositivo. Registro externo e inmutable de la actividad sellada del device.
+- **evidence**: el hash firmado de la atestación que se entrega.
+- **data**: base64 de la atestación completa (recuperable desde IPFS de stamping.io).
+
+### transactionType por tipo de evento
+- `xami-audit-log` → atestación de log de auditoría
+- `xami-device-info` → atestación de informacion del device
+- (otros segun se necesiten)
+
+### Verificación y resultado
+- Solo importa **`code == 200`** (sellado transmitido OK).
+- Se guarda el **trxid** en el log/atestación como prueba de sellado de tiempo.
+- El resto de campos de la respuesta (blockhash, nonce, version...) NO interesan.
+
+### Sin fallback (decisión)
+Si stamping.io está caído, no se hace el sellado. NO hay fallback. Es UNA prueba más
+de atestación, no la única. La firma y el log siguen siendo válidos sin el sello.
+El sistema no depende de un servicio externo.
+
+### Secreto a provisionar (se suma a la lista)
+STAMPING_API_KEY es global por ahora. Con `/auth` de tenant, cada tenant tendrá su
+bearer. Se suma a: secret HMAC, secreto VaultStamping, token stamping.
