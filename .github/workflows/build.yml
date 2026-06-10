@@ -31,10 +31,10 @@ jobs:
           WIFI_PASS: ${{ secrets.WIFI_PASS }}
           SERVERHSM_URL: ${{ secrets.SERVERHSM_URL }}
 
-      - name: Build con ESP-IDF v6.2.0
-        uses: espressif/esp-idf-ci-action@v2
+      - name: Build con ESP-IDF v5.4.4
+        uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v6.2.0
+          esp_idf_version: v5.4.4
           target: esp32s3
           path: firmware
           command: idf.py build
@@ -71,13 +71,12 @@ jobs:
           tag_name: firmware-v${{ github.run_number }}
           name: "miniHSM Firmware build #${{ github.run_number }}"
           body: |
+            Compilado con ESP-IDF v5.4.4 para ESP32-S3.
             ## Flash rápido (un solo archivo)
             ```
             esptool.py --chip esp32s3 --port COM7 write_flash 0x0 minihsm-merged.bin
             ```
-            Binario compilado con ESP-IDF v6.2.0 para ESP32-S3.
-
-            ## Configurar WiFi (si el binario no trae credenciales)
+            ## Configurar WiFi (si no hay credenciales embebidas)
             ```
             curl -X POST http://<IP-ESP32>/provision/wifi \
               -H "Content-Type: application/json" \
