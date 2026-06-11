@@ -1354,3 +1354,23 @@ toggle de ENTIRE_FILE.
 Web xami.run/firmar/ actualizada con controles: modo, firma visible (pagina,
 coordenadas, imagen de sello, texto). NOTA: la pagina vive en public_html/firmar/
 (fuera del repo).
+
+### BLOQUE 8 F2: separar ATRIBUTOS del diccionario vs TEXTO VISIBLE (2026-06-11)
+Feedback del usuario: en firma profesional, el texto visible del sello NO es lo
+mismo que los atributos del diccionario (name/reason/location/contact). Antes
+'name' estaba fijo al deviceId y faltaba 'contact'; el texto visible quedaba atado
+al name via %(signer)s.
+Fix: /v1/signatures/pdf ahora expone los 4 atributos del SignatureObject de forma
+independiente del texto visible:
+  - name    -> /Name        (firmante declarado; si vacio = MiniHSM-{deviceId})
+  - reason  -> /Reason
+  - location-> /Location
+  - contact -> /ContactInfo
+El stamp_text (apariencia) es TEXTO LIBRE, independiente. Quedan 3 capas separadas:
+(1) atributos del diccionario (declarativos, Propiedades en Acrobat),
+(2) texto visible del sello (libre),
+(3) firmante criptografico (cert del device, lo unico que da validez).
+Validado en hardware: /Name=Juan Perez Quispe, /Reason, /Location, /ContactInfo
+correctos en el dict, texto visible distinto, cert subject = MiniHSM-00da0f3b57ec8f14.
+Web /firmar reorganizada en dos secciones: "Atributos de la firma" y "Apariencia
+visible".

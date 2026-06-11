@@ -61,8 +61,10 @@ async def sign_pdf_bytes(
     pdf_bytes: bytes,
     device_id: str,
     *,
+    name: str | None = None,
     reason: str = "Firma electronica miniHSM (Xami)",
     location: str = "Peru",
+    contact: str | None = None,
     visible: bool = False,
     page: int = 0,                       # 0-indexed
     box=None,                            # (x1, y1, x2, y2) en puntos PDF
@@ -81,8 +83,11 @@ async def sign_pdf_bytes(
         field_spec = SigFieldSpec("Signature1")
 
     meta = PdfSignatureMetadata(
-        field_name="Signature1", reason=reason, location=location,
-        name=f"MiniHSM-{device_id}",
+        field_name="Signature1",
+        name=(name or f"MiniHSM-{device_id}"),   # atributo /Name (firmante declarado)
+        reason=reason,                            # atributo /Reason
+        location=location,                        # atributo /Location
+        contact_info=contact,                     # atributo /ContactInfo
         certify=certify,
         docmdp_permissions=MDPPerm.NO_CHANGES if certify else MDPPerm.FILL_FORMS,
     )

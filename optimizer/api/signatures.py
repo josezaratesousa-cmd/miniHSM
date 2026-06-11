@@ -53,8 +53,10 @@ async def _run(pid: str, pdf_bytes: bytes, device_id: str, kwargs: dict):
 async def sign_pdf(
     file:          UploadFile = File(...),
     device_id:     str = Form(None),
+    name:          str = Form(None),
     reason:        str = Form("Firma electronica miniHSM (Xami)"),
     location:      str = Form("Peru"),
+    contact:       str = Form(None),
     visible:       bool = Form(False),
     page:          int = Form(1),           # 1-indexed para el usuario
     box:           str = Form(None),        # "x1,y1,x2,y2"
@@ -79,7 +81,7 @@ async def sign_pdf(
 
     dev = _resolve_device(device_id)
     kwargs = dict(
-        reason=reason, location=location,
+        name=name, reason=reason, location=location, contact=contact,
         visible=visible, page=max(0, page - 1), box=box_tuple,
         stamp_image_bytes=img_bytes, stamp_text=stamp_text,
         image_opacity=image_opacity, certify=(mode == "certify"),
