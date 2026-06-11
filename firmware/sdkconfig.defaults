@@ -20,6 +20,8 @@ CONFIG_MBEDTLS_PK_WRITE_C=y
 CONFIG_MBEDTLS_ENTROPY_C=y
 CONFIG_MBEDTLS_HAVE_TIME=y
 CONFIG_MBEDTLS_USE_PSA_CRYPTO=y
+# HKDF para el match (ECIES key derivation, Bloque 9)
+CONFIG_MBEDTLS_HKDF_C=y
 
 # Bundle de certificados raiz (para que el heartbeat valide HTTPS de api.xami.run)
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
