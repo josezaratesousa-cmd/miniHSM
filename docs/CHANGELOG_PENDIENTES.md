@@ -1322,3 +1322,14 @@ Piezas nuevas (server, NO toca firmware):
 Verificacion del PDF firmado: INTACT:TRUSTED,UNTOUCHED (firma del device verifica,
 encadena a la CA dev). Patron asincrono para evitar timeouts del proxy mientras el
 device pollea (~0-25s). Pendiente para PAdES verde real: ceremonia CA publica.
+
+### FIX: PDFs con xref hibrido (2026-06-11)
+Sintoma: al firmar un PDF "del mundo real" (ej. un whitepaper exportado), pyhanko
+lanzaba SigningError "Attempting to sign document with hybrid cross-reference
+sections while hybrid xrefs are disabled". Causa: el PDF usa secciones de
+cross-reference hibridas (tabla xref clasica + /XRefStm a un stream xref, por
+compat con lectores viejos) y el IncrementalPdfFileWriter en modo estricto las
+rechaza (pdf_signer.py: if prev.strict and prev.xrefs.hybrid_xrefs_present -> raise).
+Fix: construir el writer con strict=False en signing/pades_polling.py. pyhanko
+maneja los xref hibridos de forma tolerante y, de paso, acepta mejor PDFs reales.
+La firma resultante sigue siendo PAdES valida.
