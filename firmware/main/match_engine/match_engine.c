@@ -70,7 +70,7 @@ esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
 
         /* Cargar eph_pub (65 bytes uncompressed) */
         rc = mbedtls_ecp_point_read_binary(&grp, &Q_eph, eph_pub, ECIES_EPHPUB_LEN);
-        if (rc) { ESP_LOGE(TAG, "read eph_pub %d", rc); break; }
+        if (rc) { ESP_LOGW(TAG, "read_eph_pub rc=%d", rc); break; }
 
         /* Cargar privada del device */
         rc = mbedtls_mpi_read_binary(&d, privkey, CRYPTO_PRIVKEY_SIZE);
@@ -78,7 +78,7 @@ esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
 
         /* ECDH: z = (d * Q_eph).X */
         rc = mbedtls_ecdh_compute_shared(&grp, &z, &Q_eph, &d, NULL, NULL);
-        if (rc) { ESP_LOGE(TAG, "ecdh %d", rc); break; }
+        if (rc) { ESP_LOGW(TAG, "ecdh rc=%d", rc); break; }
 
         rc = mbedtls_mpi_write_binary(&z, shared, sizeof(shared));
         if (rc) { ESP_LOGE(TAG, "write shared %d", rc); break; }
@@ -89,7 +89,7 @@ esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
         rc = mbedtls_hkdf(md, salt32, sizeof(salt32), shared, sizeof(shared),
                           HKDF_INFO, sizeof(HKDF_INFO) - 1,  /* sin el \0 */
                           aeskey, sizeof(aeskey));
-        if (rc) { ESP_LOGE(TAG, "hkdf %d", rc); break; }
+        if (rc) { ESP_LOGW(TAG, "hkdf rc=%d", rc); break; }
 
         /* AES-256-GCM decrypt */
         mbedtls_gcm_context gcm;
@@ -103,7 +103,7 @@ esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
                                           ct, out);
         }
         mbedtls_gcm_free(&gcm);
-        if (rc) { ESP_LOGE(TAG, "gcm decrypt %d (tag invalido?)", rc); break; }
+        if (rc) { ESP_LOGW(TAG, "gcm rc=%d", rc); break; }
 
         *out_len = ct_len;
         ret = ESP_OK;
@@ -197,22 +197,35 @@ esp_err_t match_perform(const char *server_url)
     esp_http_client_set_post_field(client, body_str, strlen(body_str));
 
     esp_err_t ret = ESP_FAIL;
-    esp_err_t err = esp_http_client_perform(client);
+    /* Patron manual open/write/read: perform() consume el stream y read_response()
+       puede devolver vacio. Con open/read controlamos la lectura del body. */
+    esp_err_t err = esp_http_client_open(client, strlen(body_str));
     if (err == ESP_OK) {
+        esp_http_client_write(client, body_str, strlen(body_str));
+        esp_http_client_fetch_headers(client);
         int status = esp_http_client_get_status_code(client);
-        esp_http_client_read_response(client, resp_buf, MATCH_MAX_RESP - 1);
+        int rlen = esp_http_client_read(client, resp_buf, MATCH_MAX_RESP - 1);
+        if (rlen < 0) rlen = 0;
+        resp_buf[rlen] = 0;
+        ESP_LOGI(TAG, "match status=%d, resp_len=%d", status, rlen);
         if (status == 200) {
             cJSON *resp = cJSON_Parse(resp_buf);
+            if (!resp) { ESP_LOGE(TAG, "JSON parse fallo. resp_buf: %.120s", resp_buf); }
             cJSON *enc = resp ? cJSON_GetObjectItem(resp, "secretsEncrypted") : NULL;
+            if (resp && !enc) { ESP_LOGE(TAG, "no se encontro secretsEncrypted"); }
             if (enc && cJSON_IsString(enc)) {
+                ESP_LOGI(TAG, "blob hex len=%d", (int)strlen(enc->valuestring));
                 /* hex -> bytes */
                 size_t blob_len = strlen(enc->valuestring) / 2;
                 uint8_t *blob = malloc(blob_len);
-                if (blob && crypto_hex_to_bytes(enc->valuestring, blob, blob_len) == ESP_OK) {
+                esp_err_t hx = (blob ? crypto_hex_to_bytes(enc->valuestring, blob, blob_len) : ESP_FAIL);
+                ESP_LOGI(TAG, "blob_len=%d hex2bytes=%d", (int)blob_len, (int)hx);
+                if (blob && hx == ESP_OK) {
                     uint8_t secret[32];
                     size_t out_len = 0;
-                    if (match_ecies_decrypt(blob, blob_len, secret, sizeof(secret), &out_len) == ESP_OK
-                        && out_len == 32) {
+                    esp_err_t dec = match_ecies_decrypt(blob, blob_len, secret, sizeof(secret), &out_len);
+                    ESP_LOGI(TAG, "ecies_decrypt ret=%d out_len=%d", (int)dec, (int)out_len);
+                    if (dec == ESP_OK && out_len == 32) {
                         if (policy_set_secret(secret) == ESP_OK) {
                             ESP_LOGI(TAG, "MATCH OK: secret recibido y guardado");
                             ret = ESP_OK;
