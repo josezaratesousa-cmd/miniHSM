@@ -2,7 +2,12 @@
 
 > El "cuándo y en qué orden". El QUÉ y POR QUÉ están en CHANGELOG_PENDIENTES.md
 > y CONTEXTO_FIRMADO_BLOCKCHAIN.md — aquí solo se REFERENCIAN, no se duplican.
-> Marcar [x] al completar. Fecha inicio: 2026-06-10
+> Marcar [x] al completar. Fecha inicio: 2026-06-10.
+>
+> RE-PRIORIZADO 2026-06-11: el orden ahora prioriza lo que CAMBIA EL CONTRATO
+> (entradas/salidas) de las APIs públicas — conviene estabilizar ese contrato
+> antes de tener clientes integrados. Lo interno (seguridad device<->server,
+> ceremonia CA) va después porque NO cambia el contrato visible al cliente.
 
 ## Reparto de tareas
 - **Claude (server/manyao):** código en repo, builds CI, config servidor, pruebas de endpoints.
@@ -11,83 +16,62 @@
 
 ---
 
-## FASE 1 — Validar el núcleo (desbloquea todo lo demás)
+## ✅ HECHO Y VALIDADO EN HARDWARE (device 00da0f3b57ec8f14 · ver CHANGELOG)
 
-### 1.1 Prueba de firma real end-to-end  [CHANGELOG: "TRABAJO EN CURSO: SERVICIOS DE FIRMA"]
-- [x] Flujo polling: server encola job → device recoge en su poll → valida token HMAC → firma → postea resultado (Bloque 10). VALIDADO en hardware (device 00da0f3b57ec8f14, firmware-v35)
-- [x] Confirmar firma DER + certificado de vuelta — OK (firma 3045..., cert del device)
-- [x] Validar que el digest firmado corresponde (no doble hash) — OK: firma verifica PREHASHED contra la pubkey del match; doble-hash falla. Sin doble hash confirmado
-- [x] nextPollSeconds dictado por el server: 300→25 adoptado por el device en vivo
-- PENDIENTE (paralelo): cert va UNPROVISIONED (placeholder sin clave real) → ceremonia CA para PAdES verificable en Acrobat
-
-### 1.2 Bloque 0 — Timestamp UTC + NTP  [CHANGELOG: BLOQUE 0]
-- [ ] Sincronización NTP en arranque del firmware
-- [ ] Función central de envelope {meta,data} con time/timeUnix/timeSynced
-- Responsable: Claude (firmware + optimizer)
-
----
-
-## FASE 2 — Base rápida y visible
-
-### 2.1 Bloque 1 — /health  [CHANGELOG: BLOQUE 1]
-- [ ] version/build/release, device con modelo, cert state, NTP time
-### 2.2 Bloque 2 — /device  [CHANGELOG: BLOQUE 2]
-- [ ] deviceId con modelo, firmware estructurado, bloque de tiempo
-### 2.3 Modelo XAMI_MODEL en Kconfig  [CHANGELOG: "Familia de productos"]
-- [ ] Definir XAMI_MODEL (default A1), aplicar a device + SoftAP
+- [x] **Bloque 9 — Match**: secreto compartido device<->server (ECDH efímero + HKDF + AES-256-GCM). VALIDADO.
+- [x] **Bloque 10 — Polling de firma**: el heartbeat entrega el job + token `kuser` (HMAC simple sobre el secreto del match) + `nextPollSeconds`. VALIDADO (firmware-v35).
+- [x] **Firma real E2E**: el mini firma el digest, la DER verifica contra la pubkey del match, **sin doble hash**. VALIDADO.
+- [x] **Bloque 8 — Forma 2**: `POST /v1/signatures/pdf` (subir PDF -> el mini firma -> descargar). Flujo async: `requestId` / `GET .../{id}` (estado) / `GET .../{id}/download`. Incluye:
+  - [x] Firma invisible o **visible** (página + coordenadas/box).
+  - [x] **Atributos del diccionario** independientes: `name`, `reason`, `location`, `contact` (/Name,/Reason,/Location,/ContactInfo).
+  - [x] **Sello en 3 modos** (`stamp_source`): `attributes` | `default` | `custom`.
+  - [x] **Imagen del sello**: `image_mode` = `background` | `left` (+ `image_opacity`).
+  - [x] **Modo** `approval` | `certify` (DocMDP NO_CHANGES sella el documento).
+  - [x] **TSA RFC 3161** (`tsa_url`) -> PAdES-T. VALIDADO contra freetsa.org.
+  - [x] Fix PDFs con **xref híbrido** (strict=False).
+  - [x] `GET /v1/signatures/ca.pem` (CA de prueba para confiar en Acrobat).
+  - [x] **CA de desarrollo persistente** (dev_pki) que certifica la pubkey REAL del mini.
+  - [x] CORS para xami.run. Web operativa: https://xami.run/firmar/
+- [x] **Infra/bugs**: `--workers 1` (cola/registro en RAM compartidos), `/health` vía registro de heartbeats, `/openapi.json` 500 (forward-ref) resuelto.
 
 ---
 
-## FASE 3 — Valor de negocio (firma + clientes)
+## PENDIENTE — RE-PRIORIZADO POR IMPACTO EN EL CONTRATO DE API
 
-### 3.1 Bloque 8 — Servicios de firma + homologación UANATACA  [CHANGELOG: BLOQUE 8]
-- [ ] Clases internas: SigningService, PadesBuilder, AuthValidator
-- [ ] /v1/signatures/digest (Servicio 1)
-- [ ] /v1/signatures/pdf (Servicio 2, con appearance/control)
-- [ ] Compatibilidad /signbox/api/v1/sign (payload UANATACA)
-- [ ] Flujo async job/result
-- [ ] Prueba PAdES real en Acrobat (Nivel A) — Usuario valida
-### 3.2 Bloque 7 — Sellado stamping.io  [CHANGELOG: BLOQUE 7]
-- [ ] Llamada con bearer (ya probado), guardar coordenadas en respuesta (no almacenar)
-- [ ] attestation en respuestas de info externa
+### P1 · Cambian la SALIDA de (casi) todas las APIs → hacer PRIMERO
+- [ ] **Bloque 0 — Envelope común** `{meta,data}` con `time/timeUnix/timeSynced` + NTP en firmware. Afecta la salida de TODOS los endpoints; hacerlo antes de que haya clientes que dependan del formato actual. (Claude: firmware + optimizer)
+- [ ] **Bloque 1 — /health estructurado**: version/build/release, device con modelo, cert state, NTP time. (cambia salida /health)
+- [ ] **Bloque 2 — /device estructurado**: deviceId con modelo, firmware estructurado, bloque de tiempo. (cambia salida /device)
 
----
+### P2 · Nuevas ENTRADAS/SALIDAS de API (servicios de firma que faltan)
+- [ ] **Bloque 8 — Forma 1**: `POST /v1/signatures/digest` (el cliente arma el PAdES y manda solo el hash -> el mini firma -> devuelve firma+cert). Envoltorio fino sobre la cola ya existente. (nueva API)
+- [ ] **Compatibilidad UANATACA**: `/signbox/api/v1/sign` con payload homologado. (nueva API de entrada; homologación con cliente real)
+- [ ] **Bloque 4 — Verification-as-a-Service**: endpoint para verificar firmas/documentos. (nueva API)
 
-## FASE 4 — Seguridad avanzada (lo ambicioso)
+### P3 · Cambian salida / identidad (menos urgente)
+- [ ] **Bloque 3 — /device como VC W3C 2.0 (COSE)**: la salida de /device pasa a credencial verificable. (cambia salida)
+- [ ] **XAMI_MODEL en Kconfig**: modelo en device + SoftAP. (firmware; afecta device/SoftAP)
 
-### 4.1 Bloque 5 — Autorización 2 capas + VaultStamping  [CHANGELOG: BLOQUE 5 + EVOLUCIÓN]
-- [ ] HMAC hardening (anti-replay persistente NVS)
-- [ ] VaultStamping en Python (reimplementar vaultStamping.js)
-- [ ] Secreto cifrado en reposo + KUser efímero + HMAC que amarra todo
-### 4.2 Provisioning del secret  [CHANGELOG: "PENDIENTE CRÍTICO"]
-- [ ] Compartir secret device↔server de forma segura (no por red)
-
----
-
-## FASE 5 — Identidad y auditoría (grandes)
-
-### 5.1 Bloque 3 — /device como VC W3C 2.0 (COSE)  [CHANGELOG: BLOQUE 3]
-### 5.2 Bloque 4 — Verification-as-a-Service  [CHANGELOG: BLOQUE 4]
-### 5.3 Bloque 6 — Auditoría persistente y atestada  [CHANGELOG: BLOQUE 6]
+### P4 · NO cambian el contrato de API (internas / seguridad / confianza) → DESPUÉS
+- [ ] **Ceremonia CA (Nivel B)**: cert del mini emitido por CA pública/cualificada -> verde en Acrobat sin importar nada. No cambia entrada/salida; cambia el cert embebido. (desbloquea validez legal visible)
+- [ ] **Fase C — Autorización avanzada (Bloque 5+10 unificado)**: doble candado VaultStamping + KUser, **rotación de KMaster por arranque**, anti-replay por época, validación del heartbeat entrante. Interno device<->server; **toca FIRMWARE (build+flash)**; NO cambia el contrato del cliente. [HOY: solo candado simple HMAC sobre el secreto del match; sin rotación]
+- [ ] **Provisioning seguro del secret** device<->server (no por red).
+- [ ] **Bloque 7 — Sellado stamping.io** (attestation en respuestas de info externa).
+- [ ] **Bloque 6 — Auditoría persistente y atestada**.
+- [ ] **zkSNARK Groth16** (no-repudio portable) — capa posterior server-side.
 
 ---
 
-## EN PARALELO (no bloquean, cuando haya hueco)
-- [ ] Recuperación de red completa (escalera + portal con contexto) [CHANGELOG: "DISEÑO — Recuperación de red"]
-- [x] Bug: /health colgaba (conexion directa al device, imposible con NAT) -> ahora via registro heartbeats
-- [x] Bug: /openapi.json 500 (forward-ref LoadCertRequest) -> resuelto, /docs OK
+## EN PARALELO (no bloquean)
 - [ ] Borrar código viejo /home/fileserver/.../serverHSM tras validar api.xami.run
-- [ ] Ceremonia CA (Nivel B verde en Acrobat)
 - [ ] Subir vaultStamping.js y colección UANATACA a docs/referencias/
+- [ ] Recuperación de red completa (escalera + portal con contexto)
+- [ ] Web /firmar: TSAs predefinidas en desplegable; preview para arrastrar el box; afinar reparto imagen/texto del modo `left`
 
 ---
 
 ## PROGRESO GLOBAL
-- Fase 1: ✅ Bloque 9 match + ✅ Bloque 10 polling + ✅ FIRMA REAL E2E VALIDADA en hardware (digest firmado, DER verifica contra pubkey, sin doble hash). Falta cert provisionado (ceremonia CA) para PAdES.
-- Bloque 10 (polling firma): SOFTWARE LISTO (server probado+desplegado, firmware-v35 build OK).
-  Pendiente: flasheo v35 + e2e firma real (1.1) -> valida la firma end-to-end.
-- Bugs en paralelo /health y /openapi.json: RESUELTOS.
-- Fase 2: ☐
-- Fase 3: ☐
-- Fase 4: ☐
-- Fase 5: ☐
+- **Núcleo**: ✅ match (B9) + polling (B10) + firma real E2E.
+- **Bloque 8 Forma 2**: ✅ COMPLETO (visible, atributos, 3 modos de sello, imagen fondo/izquierda, approval/certify, TSA/PAdES-T, CA dev, web).
+- **Pendiente contrato de API (P1/P2/P3)**: Bloque 0 envelope, /health, /device, Forma 1 digest, UANATACA, verificación, VC W3C.
+- **Pendiente interno (P4)**: ceremonia CA, Fase C (VaultStamping + rotación KMaster), provisioning, auditoría, zkSNARK.
