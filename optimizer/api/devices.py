@@ -130,13 +130,15 @@ def match(req: Request, body: MatchRequest):
     Verifica: deviceID vendido + proof of possession. Registra la pubkey (TOFU A1).
     La entrega de secretos cifrados (ECIES) se agrega en Capa 2.
     """
-    # 1. Bloqueado?
+    # 1. Bloqueado? (unico motivo de rechazo por identidad: reclamacion/fraude)
     if sold_devices.is_blocked(body.deviceId):
         raise HTTPException(403, f"Device {body.deviceId} is blocked")
 
-    # 2. Es un device vendido/legitimo?
+    # 2. Matricula automatica (TOFU): si el device no esta registrado, se da de alta
+    #    en el primer match. Modelo A1: confiar y matricular, con poder de bloquear luego.
     if not sold_devices.is_sold(body.deviceId):
-        raise HTTPException(403, f"Device {body.deviceId} not in sold list")
+        sold_devices.register_sold(body.deviceId, note="auto-matriculado en primer match")
+        log.info(f"Match: {body.deviceId} MATRICULADO automaticamente (primer contacto)")
 
     # 3. Proof of possession: la firma valida contra la pubkey declarada?
     challenge = f"{body.deviceId}:{body.timestamp}:{body.nonce}".encode()
