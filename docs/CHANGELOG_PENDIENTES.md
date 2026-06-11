@@ -1179,5 +1179,5 @@ heartbeat.c reescrito:
 - Buffers grandes (sig_hex, cert_pem, url, resp_buf) en static (no stack).
 DECISION: firma inline en la task del heartbeat (no task dedicada) por simplicidad;
 si en hardware da stack overflow, migrar a task dedicada 8192 como el match.
-PENDIENTE: push -> build CI (firmware-v34) -> usuario flashea -> e2e firma real.
+build v33->v34: primer intento fallo por %u vs uint32_t (fix PRIu32, commit e50827d). Rebuild en curso.
 PENDIENTE: reiniciar xami-optimizer.service para que el server tome el codigo nuevo.
