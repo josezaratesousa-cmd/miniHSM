@@ -1300,3 +1300,25 @@ Primer ciclo completo de firma por el canal de polling, en device fisico
   found"). Pasado a --workers 1 (override systemd). Para multi-worker futuro: mover
   cola+registro a store compartido/persistente.
 - Cert va UNPROVISIONED (placeholder sin clave real) -> pendiente ceremonia CA para PAdES.
+
+### BLOQUE 8 - FORMA 2 IMPLEMENTADO: /v1/signatures/pdf (2026-06-11)
+Subes un PDF -> el miniHSM lo firma (PAdES via cola de polling) -> descargas el
+PDF firmado. Validado e2e en hardware (device 00da0f3b57ec8f14).
+Piezas nuevas (server, NO toca firmware):
+- signing/dev_pki.py: CA de desarrollo PERSISTENTE (/home/xami/public_html/api/pki/,
+  fuera del repo). Emite el cert del device al vuelo con su pubkey real del match.
+  NO es CA de produccion; para verde-sin-importar hace falta la ceremonia CA.
+- signing/pades_polling.py: PollingSigner(pyhanko.Signer). async_sign_raw encola el
+  digest en job_queue y espera con asyncio.sleep (NO bloquea el event loop -> el
+  heartbeat del device entra en paralelo y deposita la firma). sign_pdf_bytes() firma
+  PAdES-B-B in-process (sin HTTP a si mismo, sin cliente directo).
+- minihsm/pdf_jobs.py: estado RAM de trabajos de firma de PDF (guarda el PDF firmado
+  mientras el cliente descarga). Distinto de job_queue.
+- api/signatures.py: router /v1/signatures. POST /pdf (encola, background task,
+  devuelve requestId; auto-resuelve device online), GET /pdf/{id} (estado),
+  GET /pdf/{id}/download (PDF firmado), GET /ca.pem (CA de prueba).
+- api/main.py: CORSMiddleware (allow_origins xami.run) + include signatures_router.
+- Web: https://xami.run/firmar/ (public_html/firmar/index.html) - subir/ver/descargar.
+Verificacion del PDF firmado: INTACT:TRUSTED,UNTOUCHED (firma del device verifica,
+encadena a la CA dev). Patron asincrono para evitar timeouts del proxy mientras el
+device pollea (~0-25s). Pendiente para PAdES verde real: ceremonia CA publica.

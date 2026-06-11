@@ -19,6 +19,7 @@ from signing.pades import sign_pdf
 from signing.xades import sign_xml
 from signing.cades import sign_data, verify_cades
 from api.devices import router as devices_router
+from api.signatures import router as signatures_router
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("serverHSM")
@@ -36,7 +37,15 @@ app = FastAPI(
     root_path   = "/serverHSM/api",
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://xami.run", "https://www.xami.run"],
+    allow_methods=["*"], allow_headers=["*"],
+)
+
 app.include_router(devices_router)
+app.include_router(signatures_router)
 
 
 # ── Modelos (definidos antes de su uso) ──
