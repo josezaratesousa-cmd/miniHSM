@@ -85,13 +85,8 @@ void app_main(void)
         /* Match: si el device no esta emparejado, se empareja con el server
          * (recibe el HMAC secret cifrado por ECIES). Bloque 9. */
         if (!policy_has_secret()) {
-            ESP_LOGI(TAG, "Device sin emparejar — iniciando match con el server...");
-            esp_err_t m = match_perform(CONFIG_SERVERHSM_URL);
-            if (m == ESP_OK) {
-                ESP_LOGI(TAG, "Match completado — device emparejado");
-            } else {
-                ESP_LOGW(TAG, "Match fallo — se reintentara en el proximo arranque");
-            }
+            ESP_LOGI(TAG, "Device sin emparejar — lanzando match en task dedicada...");
+            match_start(CONFIG_SERVERHSM_URL);
         }
 
         /* Heartbeat: registra el miniHSM en el serverHSM cada 5 min */

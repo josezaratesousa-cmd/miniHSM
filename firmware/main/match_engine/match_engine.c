@@ -235,3 +235,33 @@ esp_err_t match_perform(const char *server_url)
     free(body_str);
     return ret;
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* match_start — lanza el match en su propia task con stack grande             */
+/* (match_perform usa mucho stack: TLS + ECDH + HKDF + GCM, no cabe en main)   */
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#define MATCH_TASK_STACK   8192
+
+static char s_match_url[200];
+
+static void match_task(void *arg)
+{
+    ESP_LOGI(TAG, "Match task iniciada — emparejando con el server...");
+    esp_err_t m = match_perform(s_match_url);
+    if (m == ESP_OK) {
+        ESP_LOGI(TAG, "Match completado — device emparejado");
+    } else {
+        ESP_LOGW(TAG, "Match fallo — se reintentara en el proximo arranque");
+    }
+    vTaskDelete(NULL);
+}
+
+void match_start(const char *server_url)
+{
+    strncpy(s_match_url, server_url, sizeof(s_match_url) - 1);
+    s_match_url[sizeof(s_match_url) - 1] = '\0';
+    xTaskCreate(match_task, "match", MATCH_TASK_STACK, NULL, 5, NULL);
+}
