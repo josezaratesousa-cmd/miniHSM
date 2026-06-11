@@ -61,6 +61,7 @@ async def sign_pdf(
     page:          int = Form(1),           # 1-indexed para el usuario
     box:           str = Form(None),        # "x1,y1,x2,y2"
     stamp_text:    str = Form(None),
+    stamp_source:  str = Form("custom"),    # custom = texto libre | attributes = usa los atributos
     image_opacity: float = Form(0.5),
     mode:          str = Form("approval"),  # approval | certify
     stamp_image:   UploadFile = File(None),
@@ -78,6 +79,17 @@ async def sign_pdf(
         box_tuple = DEFAULT_BOX
 
     img_bytes = await stamp_image.read() if stamp_image is not None else None
+
+    # Contenido del sello visible: "attributes" reutiliza los atributos del
+    # diccionario; "custom" usa el texto libre (stamp_text). Asi el usuario elige
+    # si las lineas son iguales a los campos del diccionario o distintas.
+    if visible and (stamp_source or "custom").lower() == "attributes":
+        _l = [f"Firmado por: {name}" if name else "Firmado por: %(signer)s"]
+        if reason:   _l.append(f"Razón: {reason}")
+        if location: _l.append(f"Lugar: {location}")
+        if contact:  _l.append(f"Contacto: {contact}")
+        _l.append("Fecha: %(ts)s")
+        stamp_text = "\n".join(_l)
 
     dev = _resolve_device(device_id)
     kwargs = dict(

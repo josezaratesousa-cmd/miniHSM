@@ -1374,3 +1374,21 @@ Validado en hardware: /Name=Juan Perez Quispe, /Reason, /Location, /ContactInfo
 correctos en el dict, texto visible distinto, cert subject = MiniHSM-00da0f3b57ec8f14.
 Web /firmar reorganizada en dos secciones: "Atributos de la firma" y "Apariencia
 visible".
+
+### BLOQUE 8 F2: stamp_source (sello = atributos | texto libre) (2026-06-11)
+Feedback: el sello visible (lineas) y los atributos del diccionario deben poder ser
+IGUALES o DISTINTOS, a eleccion del usuario. Nuevo parametro en /v1/signatures/pdf:
+  - stamp_source="custom" (default): el sello usa stamp_text (texto libre,
+    independiente de los atributos).
+  - stamp_source="attributes": el server arma el sello con los 4 atributos del
+    diccionario (name/reason/location/contact) + fecha, una linea cada uno:
+      Firmado por: {name|%(signer)s}
+      Razon: {reason}
+      Lugar: {location}
+      Contacto: {contact}
+      Fecha: %(ts)s
+Validado en hardware: en modo attributes la apariencia (AP/N del campo de firma)
+contiene los textos de los atributos (Maria Lopez Tello, Conformidad, Cusco,
+entidad, Contacto, Fecha). 5 lineas confirmadas.
+Web /firmar: selector "Contenido del sello" (Usar atributos | Texto personalizado),
+el ejemplo del textarea ahora es de 5 lineas.
