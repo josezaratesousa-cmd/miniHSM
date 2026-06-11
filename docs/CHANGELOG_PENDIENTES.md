@@ -1418,3 +1418,9 @@ public_html/firmar/index.html, fuera del repo).
   border_width (0 = sin borde). Params nuevos en /v1/signatures/pdf: text_opacity,
   border (bool), border_width (int).
 Validado en hardware: firma con border_width=3 + text_opacity=0.55 + image_mode=left OK.
+
+### BLOQUE 8 F2: image_width (proporcion imagen/texto en modo left) (2026-06-11)
+Nuevo param image_width en /v1/signatures/pdf: ancho de la imagen en el modo
+image_mode=left. Acepta "NN%" (fraccion del box) o "NN"/"NNpx" (puntos PDF).
+Default = 40% (lo previo). Se acota a [10%,90%] del ancho del box. El texto ocupa
+el resto a la derecha. Validado en hardware (image_width=30% OK).

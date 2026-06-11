@@ -61,8 +61,24 @@ class PollingSigner(signers.Signer):
         raise TimeoutError("el device no firmo dentro del tiempo limite")
 
 
+def _resolve_img_width(spec, w_box, default_frac=0.40):
+    """Ancho de la imagen en modo 'left'. spec: None -> 40% del box; "NN%" ->
+    fraccion del box; "NN" o "NNpx" -> NN puntos PDF. Se acota a [10%, 90%]."""
+    if spec is None or str(spec).strip() == "":
+        return default_frac * w_box
+    raw = str(spec).strip().lower().replace("px", "").replace(" ", "")
+    try:
+        if raw.endswith("%"):
+            w = (float(raw[:-1]) / 100.0) * w_box
+        else:
+            w = float(raw)
+    except ValueError:
+        return default_frac * w_box
+    return max(0.10 * w_box, min(w, 0.90 * w_box))
+
+
 def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
-                       text_opacity=1.0, border=True, border_width=3):
+                       text_opacity=1.0, border=True, border_width=3, image_width=None):
     """Arma el TextStampStyle. image_mode: 'background' (fondo) | 'left' (imagen
     a la izquierda, texto a la derecha). text_opacity<1 atenua el texto via color
     (pyhanko no soporta alpha real en texto). border/border_width: marco de toda
@@ -77,7 +93,7 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
               border_width=(int(border_width) if border else 0))
     if bg is not None and image_mode == "left" and box:
         w_box = abs(box[2] - box[0])
-        img_w = 0.40 * w_box
+        img_w = _resolve_img_width(image_width, w_box)
         kw["background_opacity"] = max(image_opacity, 0.9)
         kw["background_layout"] = SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
@@ -105,6 +121,7 @@ async def sign_pdf_bytes(
     image_opacity: float = 0.5,
     text_opacity: float = 1.0,
     image_mode: str = "background",      # background | left
+    image_width=None,                    # ancho img en modo left: '40%' o '120' (pts)
     border: bool = True,
     border_width: int = 3,
     certify: bool = False,
@@ -133,7 +150,8 @@ async def sign_pdf_bytes(
         text = stamp_text if stamp_text is not None else DEFAULT_STAMP_TEXT
         stamp_style = _build_stamp_style(
             text, bg, image_opacity, image_mode, box,
-            text_opacity=text_opacity, border=border, border_width=border_width)
+            text_opacity=text_opacity, border=border, border_width=border_width,
+            image_width=image_width)
 
     timestamper = HTTPTimeStamper(tsa_url) if tsa_url else None
     pdf_signer = signers.PdfSigner(

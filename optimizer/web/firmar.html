@@ -120,6 +120,7 @@
             <option value="left">Imagen a la izquierda, texto a la derecha</option>
           </select>
         </div>
+        <div class="row"><label>Ancho imagen</label><input type="text" id="imgw" placeholder="solo modo izquierda — ej. 40% o 120 (puntos)"></div>
         <div class="row"><label>Opacidad img</label><input type="range" id="opa" min="10" max="100" value="50"><span class="muted" id="opaval" style="min-width:42px">50%</span></div>
         <div class="row"><label>Opacidad texto</label><input type="range" id="topa" min="20" max="100" value="100"><span class="muted" id="topaval" style="min-width:42px">100%</span></div>
         <div class="row"><label>Borde firma</label><input type="checkbox" id="border" checked><span class="muted">marco alrededor de imagen + texto</span></div>
@@ -175,6 +176,7 @@ $("#go").onclick=async()=>{
       fd.append("stamp_source",$("#stampsrc").value);
       if($("#stampsrc").value==="custom" && $("#stext").value) fd.append("stamp_text",$("#stext").value);
       fd.append("image_mode",$("#imgmode").value);
+      if($("#imgw").value) fd.append("image_width",$("#imgw").value);
       fd.append("image_opacity",($("#opa").value/100).toFixed(2));
       fd.append("text_opacity",($("#topa").value/100).toFixed(2));
       fd.append("border",$("#border").checked?"true":"false");
