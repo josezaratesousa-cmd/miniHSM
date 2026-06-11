@@ -39,6 +39,15 @@ app = FastAPI(
 app.include_router(devices_router)
 
 
+# ── Modelos (definidos antes de su uso) ──
+class DigestSignRequest(BaseModel):
+    digest_hex: str
+    request_id: Optional[str] = None
+
+class LoadCertRequest(BaseModel):
+    certificate_pem: str
+
+
 def get_client() -> MiniHSMClient:
     """
     Obtiene el cliente HTTP para el miniHSM.
@@ -86,13 +95,21 @@ def get_client() -> MiniHSMClient:
 
 @app.get("/health")
 def health():
-    online = registry.online_devices()
-    result = {"optimizer": "ok", "registeredDevices": len(online)}
-    try:
-        result["miniHSM"] = get_client().health()
-    except Exception as e:
-        result["miniHSM"] = {"error": str(e)}
-    return result
+    """Estado del optimizer + devices via heartbeat (sin conexion
+    directa al device: con NAT no es alcanzable; el registro sabe su
+    estado por los heartbeats/poll). Nunca se cuelga."""
+    devices = registry.all_devices()
+    online  = registry.online_devices()
+    return {
+        "optimizer":         "ok",
+        "registeredDevices": len(devices),
+        "onlineDevices":     len(online),
+        "devices": [
+            {"deviceId": d.device_id, "online": d.is_online,
+             "secondsSinceHeart": d.seconds_since_heartbeat}
+            for d in devices
+        ],
+    }
 
 @app.get("/device")
 def device_info():
@@ -107,7 +124,7 @@ def get_csr():
     return {"csr_pem": get_client().get_csr_pem()}
 
 @app.post("/cert")
-def load_ca_cert(req: "LoadCertRequest"):
+def load_ca_cert(req: LoadCertRequest):
     ok = get_client().load_ca_certificate(req.certificate_pem)
     if not ok:
         raise HTTPException(400, "Certificate rejected by device")
@@ -116,12 +133,6 @@ def load_ca_cert(req: "LoadCertRequest"):
 
 # ── Modelos ───────────────────────────────────────────────────────────────────
 
-class DigestSignRequest(BaseModel):
-    digest_hex: str
-    request_id: Optional[str] = None
-
-class LoadCertRequest(BaseModel):
-    certificate_pem: str
 
 
 # ── Firma digest ──────────────────────────────────────────────────────────────

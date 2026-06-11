@@ -1190,3 +1190,13 @@ PENDIENTE (usuario): flashear v35 (merged.bin @ 0x0) + e2e firma real:
   2. device recoge en su heartbeat (5s tras boot, luego cada 25s), firma, postea
   3. consultar: GET /devices/<id>/jobs/<requestId> -> status DONE + signature DER + cert
 Device de prueba: fe4dfede3b10c54b (ya emparejado, secret en NVS/server).
+
+### Bugs en paralelo — RESUELTOS (2026-06-11, solo server)
+- /openapi.json daba 500: LoadCertRequest se usaba como forward-ref string en
+  load_ca_cert ANTES de definir la clase (pydantic v2 no la resolvia). Fix: mover
+  DigestSignRequest+LoadCertRequest arriba (antes de su uso) y desquotar la
+  anotacion. /openapi.json y /docs ahora 200.
+- /health se colgaba (timeout ~8s+): llamaba get_client().health(), que intenta
+  CONECTAR directo al device — imposible con NAT (Bloque 10). Fix: /health ahora
+  reporta optimizer + devices desde el registro de heartbeats (online/segundos),
+  sin conexion directa. Responde en ~80ms. Aplicado con restart del service.
