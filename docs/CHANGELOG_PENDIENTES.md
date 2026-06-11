@@ -1285,3 +1285,18 @@ zk como sidecar Node o equivalente Python.
 - FIRMWARE (C): gen KMaster (mbedtls_mpi_gen_prime 256), derive_kuser (MPI),
   aviso de reset EC-firmado con C1, HMAC con S, ECIES-decrypt de la cola (ya existe
   del match), vault_sign (ya existe). Adios anti-replay en RAM/NVS del device.
+
+### FIRMA REAL E2E — VALIDADA EN HARDWARE (2026-06-11)
+Primer ciclo completo de firma por el canal de polling, en device fisico
+00da0f3b57ec8f14 (firmware-v35):
+- server encola job (POST /devices/{id}/jobs) -> device lo recoge en su heartbeat
+  -> valida token HMAC -> vault_sign -> postea {signature DER, cert} -> server DONE.
+- Verificacion: la firma DER verifica contra la pubkey real del device (la del match,
+  en sold_devices.json) usando ECDSA PREHASHED -> VALIDA. Con SHA256 normal (doble
+  hash) -> invalida. CONFIRMADO: el device firma el digest directo, sin doble hash.
+- nextPollSeconds 300->25 adoptado por el device en vivo (ritmo dictado por server OK).
+- Fix de despliegue necesario: el service corria con --workers 2 y la cola/registro en
+  RAM no se comparten entre workers (job caia en un worker, GET/poll en otro -> "not
+  found"). Pasado a --workers 1 (override systemd). Para multi-worker futuro: mover
+  cola+registro a store compartido/persistente.
+- Cert va UNPROVISIONED (placeholder sin clave real) -> pendiente ceremonia CA para PAdES.

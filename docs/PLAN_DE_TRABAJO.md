@@ -14,10 +14,11 @@
 ## FASE 1 — Validar el núcleo (desbloquea todo lo demás)
 
 ### 1.1 Prueba de firma real end-to-end  [CHANGELOG: "TRABAJO EN CURSO: SERVICIOS DE FIRMA"]
-- [ ] Script/flujo: server genera token HMAC con el secret → POST /sign al device → firma
-- [ ] Confirmar firma DER + certificado de vuelta
-- [ ] Validar que el digest firmado corresponde (no doble hash)
-- Responsable: Claude prepara, Usuario valida con device físico
+- [x] Flujo polling: server encola job → device recoge en su poll → valida token HMAC → firma → postea resultado (Bloque 10). VALIDADO en hardware (device 00da0f3b57ec8f14, firmware-v35)
+- [x] Confirmar firma DER + certificado de vuelta — OK (firma 3045..., cert del device)
+- [x] Validar que el digest firmado corresponde (no doble hash) — OK: firma verifica PREHASHED contra la pubkey del match; doble-hash falla. Sin doble hash confirmado
+- [x] nextPollSeconds dictado por el server: 300→25 adoptado por el device en vivo
+- PENDIENTE (paralelo): cert va UNPROVISIONED (placeholder sin clave real) → ceremonia CA para PAdES verificable en Acrobat
 
 ### 1.2 Bloque 0 — Timestamp UTC + NTP  [CHANGELOG: BLOQUE 0]
 - [ ] Sincronización NTP en arranque del firmware
@@ -82,7 +83,7 @@
 ---
 
 ## PROGRESO GLOBAL
-- Fase 1: ✅ Bloque 9 match VALIDADO en hardware real (device emparejado, secret compartido)
+- Fase 1: ✅ Bloque 9 match + ✅ Bloque 10 polling + ✅ FIRMA REAL E2E VALIDADA en hardware (digest firmado, DER verifica contra pubkey, sin doble hash). Falta cert provisionado (ceremonia CA) para PAdES.
 - Bloque 10 (polling firma): SOFTWARE LISTO (server probado+desplegado, firmware-v35 build OK).
   Pendiente: flasheo v35 + e2e firma real (1.1) -> valida la firma end-to-end.
 - Bugs en paralelo /health y /openapi.json: RESUELTOS.
