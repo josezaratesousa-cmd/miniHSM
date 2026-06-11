@@ -1181,3 +1181,12 @@ DECISION: firma inline en la task del heartbeat (no task dedicada) por simplicid
 si en hardware da stack overflow, migrar a task dedicada 8192 como el match.
 build v33->v34: primer intento fallo por %u vs uint32_t (fix PRIu32, commit e50827d). Rebuild en curso.
 PENDIENTE: reiniciar xami-optimizer.service para que el server tome el codigo nuevo.
+
+### Bloque 10 — BUILD OK: firmware-v35 (2026-06-11)
+Build CI success tras fix PRIu32. Release firmware-v35 con minihsm-merged.bin.
+Server ya corriendo codigo nuevo (xami-optimizer reiniciado, rutas verificadas).
+PENDIENTE (usuario): flashear v35 (merged.bin @ 0x0) + e2e firma real:
+  1. encolar: POST /devices/<id>/jobs {digest} -> devuelve requestId
+  2. device recoge en su heartbeat (5s tras boot, luego cada 25s), firma, postea
+  3. consultar: GET /devices/<id>/jobs/<requestId> -> status DONE + signature DER + cert
+Device de prueba: fe4dfede3b10c54b (ya emparejado, secret en NVS/server).
