@@ -1424,3 +1424,12 @@ Nuevo param image_width en /v1/signatures/pdf: ancho de la imagen en el modo
 image_mode=left. Acepta "NN%" (fraccion del box) o "NN"/"NNpx" (puntos PDF).
 Default = 40% (lo previo). Se acota a [10%,90%] del ancho del box. El texto ocupa
 el resto a la derecha. Validado en hardware (image_width=30% OK).
+
+### Web /firmar: rediseño 3 columnas + tema claro/oscuro + cURL (2026-06-11)
+Layout a 100vh: header + 3 columnas (Documento+atributos basicos | Configuracion
+en acordeones | Salida). Cada columna scrollea internamente; expandir un acordeon
+NO estira la pagina (overflow:hidden en .cols, overflow-y:auto en cada .colbody).
+Modo claro/oscuro con toggle (persistido en localStorage). Acordeon "cURL equivalente"
+que se arma en vivo segun el formulario, con resaltado y botones Copiar / Descargar .sh.
+Responsive: <920px apila columnas. Copia versionada en optimizer/web/firmar.html;
+backup de la version vertical en public_html/firmar/index_backup_vertical.html.

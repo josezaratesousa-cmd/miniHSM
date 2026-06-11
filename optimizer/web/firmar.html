@@ -1,195 +1,250 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Xami · Firma con miniHSM</title>
 <style>
-  :root{ --bg:#0e1116; --panel:#161b22; --line:#2a3140; --txt:#e6edf3; --mut:#9aa4b1; --acc:#7c5cff; --acc2:#36d399; }
+  :root{ --bg:#0e1116; --panel:#161b22; --panel2:#0f141b; --line:#2a3140; --txt:#e6edf3;
+         --mut:#9aa4b1; --acc:#7c5cff; --acc2:#36d399; --code:#0a0d12; }
+  :root[data-theme="light"]{ --bg:#eef1f6; --panel:#ffffff; --panel2:#f5f7fb; --line:#dde2ec;
+         --txt:#1b2230; --mut:#5b6573; --acc:#6b4eff; --acc2:#15a06a; --code:#0e131b; }
   *{box-sizing:border-box} html,body{margin:0;height:100%}
-  body{background:radial-gradient(1200px 600px at 50% -10%,#1b2230,transparent),var(--bg);
-       color:var(--txt);font:17px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-       display:flex;align-items:flex-start;justify-content:center;padding:28px}
-  .card{width:100%;max-width:620px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:32px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+  body{background:var(--bg);color:var(--txt);height:100vh;overflow:hidden;
+       font:16px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .app{height:100vh;display:flex;flex-direction:column}
+  .hdr{flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
   .dot{width:11px;height:11px;border-radius:50%;background:var(--acc)}
-  h1{font-size:23px;margin:14px 0 4px}
-  .sub{color:var(--mut);font-size:15px;margin:0 0 16px}
-  .status-dev{font-size:14px;color:var(--mut);margin-bottom:16px}
-  .pill{display:inline-block;width:9px;height:9px;border-radius:50%;background:#555;margin-right:6px}
+  .dev{margin-left:auto;font-size:13.5px;color:var(--mut);display:flex;align-items:center;gap:7px}
+  .pill{width:9px;height:9px;border-radius:50%;background:#888;display:inline-block}
   .pill.on{background:var(--acc2);box-shadow:0 0 8px var(--acc2)}
-  .drop{border:1.5px dashed var(--line);border-radius:12px;padding:22px;text-align:center;cursor:pointer;background:#0f141b;font-size:16px}
-  .drop:hover,.drop.hl{border-color:var(--acc);background:#121826}
-  .drop .sm{color:var(--mut);font-size:14px;margin-top:5px}
-  .file{margin-top:12px;font-size:15px;display:none;background:#0f141b;border:1px solid var(--line);border-radius:9px;padding:10px 12px}
-  .opts{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:#0f141b}
-  .row{display:flex;align-items:center;gap:10px;margin:9px 0;font-size:15px}
-  .row label{color:var(--mut);min-width:104px}
-  .row.head{margin:0 0 10px;font-weight:600;color:var(--txt);display:block;font-size:15.5px}
-  input[type=number],input[type=text],select,textarea{background:#161b22;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:15px;width:100%}
-  input[type=checkbox]{width:17px;height:17px;accent-color:var(--acc)}
-  input[type=range]{accent-color:var(--acc);width:100%}
+  .theme{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:9px;padding:7px 11px;font-size:15px}
+  .cols{flex:1 1 auto;display:flex;gap:14px;overflow:hidden;padding:14px}
+  .col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .col h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);margin:0;padding:14px 16px 8px;flex:0 0 auto}
+  .colbody{flex:1 1 auto;overflow-y:auto;padding:0 16px 18px}
+  .drop{border:1.5px dashed var(--line);border-radius:12px;padding:24px 14px;text-align:center;cursor:pointer;background:var(--panel2);font-size:15px}
+  .drop:hover,.drop.hl{border-color:var(--acc)}
+  .drop .sm{color:var(--mut);font-size:13px;margin-top:5px}
+  .file{margin-top:10px;font-size:14px;display:none;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
+  .fld{margin-top:12px}
+  .fld label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
+  input[type=text],input[type=number],select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 10px;font-size:14.5px}
+  textarea{font-family:inherit;resize:vertical;min-height:92px}
+  input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc)}
+  input[type=range]{accent-color:var(--acc);flex:1}
+  .rowflex{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:14px}
+  .rowflex label{color:var(--mut)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
   .coords{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-  .coords input{padding:7px;text-align:center}
-  .hide{display:none}
-  .muted{color:var(--mut);font-size:13px;margin-top:4px}
-  textarea{font-family:inherit;resize:vertical;min-height:104px;line-height:1.5}
-  code{background:#161b22;border:1px solid var(--line);padding:1px 5px;border-radius:5px;font-size:13px}
-  button.go{width:100%;margin-top:18px;padding:14px;border:0;border-radius:11px;font-weight:600;font-size:16.5px;color:#fff;background:var(--acc);cursor:pointer}
+  .coords input{text-align:center;padding:7px}
+  .muted{color:var(--mut);font-size:12.5px;margin-top:5px}
+  code.inline{background:var(--panel2);border:1px solid var(--line);padding:1px 5px;border-radius:5px;font-size:12px}
+  details{border:1px solid var(--line);border-radius:11px;margin-top:12px;background:var(--panel2)}
+  summary{cursor:pointer;padding:12px 14px;font-weight:600;font-size:14.5px;list-style:none;display:flex;align-items:center;gap:8px}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"\25B8";color:var(--acc);transition:.15s;display:inline-block}
+  details[open]>summary::before{transform:rotate(90deg)}
+  .acc-body{padding:0 14px 14px}
+  button.go{width:100%;margin-top:16px;padding:14px;border:0;border-radius:11px;font-weight:600;font-size:16px;color:#fff;background:var(--acc);cursor:pointer}
   button.go:disabled{opacity:.5;cursor:not-allowed}
-  .log{margin-top:16px;font-size:15px;min-height:20px}
-  .step{display:flex;align-items:center;gap:9px;padding:5px 0;color:var(--mut)}
+  .placeholder{color:var(--mut);font-size:14px;text-align:center;padding:34px 10px}
+  .step{display:flex;align-items:center;gap:9px;padding:5px 0;color:var(--mut);font-size:14.5px}
   .step.ok{color:var(--acc2)} .step.err{color:#f06}
   .spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:s .7s linear infinite;display:inline-block}
   @keyframes s{to{transform:rotate(360deg)}}
-  .dl{display:none;margin-top:16px;padding:16px;border:1px solid var(--acc2);border-radius:12px;background:#0f1a16}
-  .dl a{color:var(--acc2);text-decoration:none;font-weight:600;font-size:16px}
-  .note{margin-top:12px;font-size:14px;color:var(--mut);line-height:1.55}
-  .note a{color:var(--acc)}
+  .dl{display:none;margin-top:14px;padding:15px;border:1px solid var(--acc2);border-radius:12px;background:var(--panel2)}
+  .dl a{color:var(--acc2);text-decoration:none;font-weight:600;font-size:15.5px}
+  .dl .note{margin-top:10px;font-size:12.5px;color:var(--mut)}
+  .dl .note a{color:var(--acc)}
+  .curlbar{display:flex;align-items:center;gap:8px}
+  .btn{cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:6px 10px;font-size:12.5px}
+  .btn:hover{border-color:var(--acc)}
+  pre.code{margin:10px 0 0;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow:auto;max-height:300px}
+  pre.code code{font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cdd6e5;white-space:pre}
+  .tok-cmd{color:#e6b34a} .tok-flag{color:#7c9cff} .tok-str{color:#7fd6a4}
+  @media (max-width:920px){ body{overflow:auto;height:auto} .app{height:auto}
+    .cols{flex-direction:column;overflow:visible} .col{overflow:visible} .colbody{overflow:visible} }
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="brand"><span class="dot"></span> Xami</div>
-    <h1>Firma con miniHSM</h1>
-    <p class="sub">Tu PDF se firma dentro del dispositivo físico (ESP32-S3). La clave privada nunca sale del chip — ECDSA P-256, PAdES.</p>
-    <div class="status-dev"><span class="pill" id="pill"></span><span id="devtxt">comprobando dispositivo…</span></div>
-
-    <div class="drop" id="drop">
-      <div>📄 Arrastra un PDF o haz clic para elegirlo</div>
-      <div class="sm">se enviará al miniHSM para firmarlo</div>
-      <input type="file" id="file" accept="application/pdf" hidden>
-    </div>
-    <div class="file" id="fileinfo"></div>
-
-    <div class="opts">
-      <div class="row head">Atributos de la firma <span class="muted" style="font-weight:400">— se ven en las Propiedades de la firma (Acrobat)</span></div>
-      <div class="row"><label>Firmante</label><input type="text" id="name" placeholder="ej. Juan Pérez — si vacío: ID del dispositivo"></div>
-      <div class="row"><label>Razón</label><input type="text" id="reason" placeholder="ej. Aprobación del documento"></div>
-      <div class="row"><label>Lugar</label><input type="text" id="location" placeholder="ej. Lima, Perú"></div>
-      <div class="row"><label>Contacto</label><input type="text" id="contact" placeholder="ej. juan@empresa.pe"></div>
-      <div class="row"><label>Modo</label>
-        <select id="mode">
-          <option value="approval">Aprobación — permite más firmas</option>
-          <option value="certify">Certificación — sella (no más cambios)</option>
-        </select>
-      </div>
-      <div class="row"><label>Sellado TSA</label>
-        <select id="tsasel">
-          <option value="">Sin sellado de tiempo</option>
-          <option value="http://freetsa.org/tsr">FreeTSA (gratuita)</option>
-          <option value="http://timestamp.digicert.com">DigiCert</option>
-          <option value="http://timestamp.sectigo.com">Sectigo</option>
-          <option value="http://time.certum.pl">Certum</option>
-          <option value="__custom__">Personalizada (ingresar URL)…</option>
-        </select>
-      </div>
-      <div class="row" id="tsacustomrow" style="display:none"><label></label><input type="text" id="tsacustom" placeholder="http://tu-tsa/tsr (RFC 3161)"></div>
-      <div class="muted">Con TSA la firma lleva sello de tiempo certificado (PAdES-T). "Sin sellado" usa la hora del servidor (no certificada).</div>
-    </div>
-
-    <div class="opts">
-      <div class="row head">Apariencia visible <span class="muted" style="font-weight:400">— el sello dibujado en la página</span></div>
-      <div class="row"><label>Mostrar sello</label><input type="checkbox" id="visible"><span class="muted">dibuja un recuadro visible</span></div>
-      <div id="vbox" class="hide">
-        <div class="row"><label>Página</label><input type="number" id="page" value="1" min="1" style="width:90px"></div>
-        <div class="row"><label>Coordenadas</label>
-          <div class="coords">
-            <input type="number" id="x1" value="40" title="x1"><input type="number" id="y1" value="40" title="y1">
-            <input type="number" id="x2" value="400" title="x2"><input type="number" id="y2" value="160" title="y2">
-          </div>
-        </div>
-        <div class="muted">x1,y1 = inferior-izquierda · x2,y2 = superior-derecha (puntos PDF)</div>
-        <div class="row"><label>Contenido</label>
-          <select id="stampsrc">
-            <option value="attributes">Atributos — usa los campos de la firma</option>
-            <option value="default">Estándar — firmante + fecha</option>
-            <option value="custom">Personalizado — texto libre</option>
-          </select>
-        </div>
-        <div class="row" id="customtext" style="align-items:flex-start;display:none"><label>Texto del sello</label>
-          <div style="flex:1">
-            <textarea id="stext" rows="6" placeholder="Firmado digitalmente por %(signer)s&#10;Razón: aprobación del contrato&#10;Lugar: Lima, Perú&#10;Contacto: juan@empresa.pe&#10;Fecha: %(ts)s"></textarea>
-            <div class="muted">Texto LIBRE. Campos: <code>%(signer)s</code> · <code>%(ts)s</code>. Una línea por Enter (5 en el ejemplo).</div>
-          </div>
-        </div>
-        <div class="row"><label>Imagen sello</label><input type="file" id="simg" accept="image/*"></div>
-        <div class="row"><label>Disposición</label>
-          <select id="imgmode">
-            <option value="background">Imagen de fondo (detrás del texto)</option>
-            <option value="left">Imagen a la izquierda, texto a la derecha</option>
-          </select>
-        </div>
-        <div class="row"><label>Ancho imagen</label><input type="text" id="imgw" placeholder="solo modo izquierda — ej. 40% o 120 (puntos)"></div>
-        <div class="row"><label>Opacidad img</label><input type="range" id="opa" min="10" max="100" value="50"><span class="muted" id="opaval" style="min-width:42px">50%</span></div>
-        <div class="row"><label>Opacidad texto</label><input type="range" id="topa" min="20" max="100" value="100"><span class="muted" id="topaval" style="min-width:42px">100%</span></div>
-        <div class="row"><label>Borde firma</label><input type="checkbox" id="border" checked><span class="muted">marco alrededor de imagen + texto</span></div>
-        <div class="row" id="bwrow"><label>Ancho borde</label><input type="number" id="bw" value="2" min="0" max="10" style="width:90px"><span class="muted">px</span></div>
-      </div>
-    </div>
-
-    <button class="go" id="go" disabled>Firmar con el miniHSM</button>
-    <div class="log" id="log"></div>
-    <div class="dl" id="dl">
-      <a id="dllink" href="#">⬇ Descargar PDF firmado</a>
-      <div class="note">En Acrobat saldrá <b>firmado y válido</b> (amarillo) hasta que confíes la CA.
-        <a href="https://api.xami.run/v1/signatures/ca.pem">Descarga la CA</a> y agrégala a identidades de confianza para el check verde.</div>
-    </div>
+<div class="app">
+  <div class="hdr">
+    <div class="brand"><span class="dot"></span> Xami · Firma con miniHSM</div>
+    <div class="dev"><span class="pill" id="pill"></span><span id="devtxt">comprobando…</span></div>
+    <button class="theme" id="theme" title="Cambiar tema">🌙</button>
   </div>
+  <div class="cols">
+    <div class="col">
+      <h2>Documento</h2>
+      <div class="colbody">
+        <div class="drop" id="drop">
+          <div>📄 Arrastra el PDF o haz clic</div>
+          <div class="sm">se enviará al miniHSM</div>
+          <input type="file" id="file" accept="application/pdf" hidden>
+        </div>
+        <div class="file" id="fileinfo"></div>
+        <div class="fld"><label>Firmante</label><input type="text" id="name" placeholder="Juan Pérez (vacío = ID device)"></div>
+        <div class="fld"><label>Razón</label><input type="text" id="reason" placeholder="Aprobación del documento"></div>
+        <div class="fld"><label>Lugar</label><input type="text" id="location" placeholder="Lima, Perú"></div>
+        <div class="fld"><label>Contacto</label><input type="text" id="contact" placeholder="juan@empresa.pe"></div>
+        <button class="go" id="go" disabled>✍ Firmar con el miniHSM</button>
+      </div>
+    </div>
+    <div class="col">
+      <h2>Configuración</h2>
+      <div class="colbody">
+        <details open>
+          <summary>Apariencia del sello</summary>
+          <div class="acc-body">
+            <div class="rowflex"><label>Mostrar sello</label><input type="checkbox" id="visible"></div>
+            <div id="vbox" style="display:none">
+              <div class="grid2">
+                <div class="fld" style="margin-top:0"><label>Página</label><input type="number" id="page" value="1" min="1"></div>
+                <div class="fld" style="margin-top:0"><label>Contenido</label>
+                  <select id="stampsrc"><option value="attributes">Atributos</option><option value="default">Estándar</option><option value="custom">Personalizado</option></select>
+                </div>
+              </div>
+              <div class="fld"><label>Coordenadas (x1,y1,x2,y2)</label>
+                <div class="coords"><input type="number" id="x1" value="40"><input type="number" id="y1" value="40"><input type="number" id="x2" value="440"><input type="number" id="y2" value="160"></div>
+              </div>
+              <div class="fld" id="customtext" style="display:none"><label>Texto del sello</label>
+                <textarea id="stext" placeholder="Firmado por %(signer)s&#10;Fecha: %(ts)s"></textarea>
+                <div class="muted">Campos: <code class="inline">%(signer)s</code> <code class="inline">%(ts)s</code></div>
+              </div>
+              <div class="fld"><label>Imagen del sello</label><input type="file" id="simg" accept="image/*"></div>
+              <div class="grid2">
+                <div class="fld" style="margin-top:0"><label>Disposición</label>
+                  <select id="imgmode"><option value="background">Fondo</option><option value="left">Imagen izq · texto der</option></select>
+                </div>
+                <div class="fld" style="margin-top:0"><label>Ancho imagen</label><input type="text" id="imgw" placeholder="40% o 120"></div>
+              </div>
+              <div class="rowflex"><label style="min-width:96px">Opacidad img</label><input type="range" id="opa" min="10" max="100" value="50"><span class="muted" id="opaval">50%</span></div>
+              <div class="rowflex"><label style="min-width:96px">Opacidad txt</label><input type="range" id="topa" min="20" max="100" value="100"><span class="muted" id="topaval">100%</span></div>
+              <div class="rowflex"><label style="min-width:96px">Borde</label><input type="checkbox" id="border" checked><input type="number" id="bw" value="2" min="0" max="10" style="width:64px"><span class="muted">px</span></div>
+            </div>
+          </div>
+        </details>
+        <details>
+          <summary>Firma y sellado</summary>
+          <div class="acc-body">
+            <div class="fld" style="margin-top:6px"><label>Modo</label>
+              <select id="mode"><option value="approval">Aprobación — permite más firmas</option><option value="certify">Certificación — sella</option></select>
+            </div>
+            <div class="fld"><label>Sellado TSA (RFC 3161)</label>
+              <select id="tsasel"><option value="">Sin sellado de tiempo</option><option value="http://freetsa.org/tsr">FreeTSA</option><option value="http://timestamp.digicert.com">DigiCert</option><option value="http://timestamp.sectigo.com">Sectigo</option><option value="http://time.certum.pl">Certum</option><option value="__custom__">Personalizada…</option></select>
+            </div>
+            <div class="fld" id="tsacustomrow" style="display:none"><input type="text" id="tsacustom" placeholder="http://tu-tsa/tsr"></div>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div class="col">
+      <h2>Salida</h2>
+      <div class="colbody">
+        <div id="result"><div class="placeholder">El resultado de la firma aparecerá aquí.</div></div>
+        <div class="dl" id="dl">
+          <a id="dllink" href="#">⬇ Descargar PDF firmado</a>
+          <div class="note">En Acrobat saldrá válido (amarillo) hasta confiar la CA. <a href="https://api.xami.run/v1/signatures/ca.pem">Descargar CA</a> para el verde.</div>
+        </div>
+        <details open style="margin-top:16px">
+          <summary>cURL equivalente</summary>
+          <div class="acc-body">
+            <div class="curlbar"><span class="muted">se arma según el formulario</span><span style="margin-left:auto"></span><button class="btn" id="cp">Copiar</button><button class="btn" id="dlc">⬇ .sh</button></div>
+            <pre class="code"><code id="curl"></code></pre>
+          </div>
+        </details>
+      </div>
+    </div>
 
+  </div>
+</div>
 <script>
 const API="https://api.xami.run", $=s=>document.querySelector(s);
-let pdf=null;
-async function checkDev(){
-  try{const d=await(await fetch(API+"/devices/")).json();
-    if(d.online>0){$("#pill").classList.add("on");$("#devtxt").textContent="miniHSM en línea ("+d.devices[0].deviceId+")";}
-    else{$("#pill").classList.remove("on");$("#devtxt").textContent="ningún miniHSM en línea ahora";}
-  }catch(e){$("#devtxt").textContent="no se pudo consultar el dispositivo";}
-}
+const root=document.documentElement;
+function setTheme(t){ root.dataset.theme=t; $("#theme").textContent=(t==="light")?"☀️":"🌙"; try{localStorage.setItem("xami-theme",t)}catch(e){} }
+setTheme((function(){try{return localStorage.getItem("xami-theme")||"dark"}catch(e){return "dark"}})());
+$("#theme").onclick=()=>setTheme(root.dataset.theme==="light"?"dark":"light");
+
+async function checkDev(){ try{const d=await(await fetch(API+"/devices/")).json();
+  if(d.online>0){$("#pill").classList.add("on");$("#devtxt").textContent="miniHSM en línea ("+d.devices[0].deviceId+")";}
+  else{$("#pill").classList.remove("on");$("#devtxt").textContent="sin miniHSM en línea";}
+ }catch(e){$("#devtxt").textContent="device no consultable";} }
 checkDev();setInterval(checkDev,8000);
-$("#visible").onchange=e=>$("#vbox").classList.toggle("hide",!e.target.checked);
-$("#stampsrc").onchange=e=>$("#customtext").style.display=(e.target.value==="custom")?"flex":"none";
-$("#opa").oninput=e=>$("#opaval").textContent=e.target.value+"%";
-$("#topa").oninput=e=>$("#topaval").textContent=e.target.value+"%";
-$("#border").onchange=e=>$("#bwrow").style.display=e.target.checked?"flex":"none";
-$("#tsasel").onchange=e=>$("#tsacustomrow").style.display=(e.target.value==="__custom__")?"flex":"none";
+
+let pdf=null;
 const drop=$("#drop"),fi=$("#file");
 drop.onclick=()=>fi.click();
 ["dragover","dragenter"].forEach(e=>drop.addEventListener(e,v=>{v.preventDefault();drop.classList.add("hl")}));
 ["dragleave","drop"].forEach(e=>drop.addEventListener(e,v=>{v.preventDefault();drop.classList.remove("hl")}));
 drop.addEventListener("drop",v=>{if(v.dataTransfer.files[0])pick(v.dataTransfer.files[0])});
 fi.onchange=()=>{if(fi.files[0])pick(fi.files[0])};
-function pick(f){pdf=f;$("#fileinfo").style.display="block";$("#fileinfo").textContent="📎 "+f.name+" ("+(f.size/1024).toFixed(1)+" KB)";$("#go").disabled=false;}
+function pick(f){pdf=f;$("#fileinfo").style.display="block";$("#fileinfo").textContent="📎 "+f.name+" ("+(f.size/1024).toFixed(1)+" KB)";$("#go").disabled=false;updateCurl();}
+
+$("#visible").addEventListener("change",e=>$("#vbox").style.display=e.target.checked?"block":"none");
+$("#stampsrc").addEventListener("change",e=>$("#customtext").style.display=e.target.value==="custom"?"block":"none");
+$("#tsasel").addEventListener("change",e=>$("#tsacustomrow").style.display=e.target.value==="__custom__"?"block":"none");
+$("#opa").addEventListener("input",e=>$("#opaval").textContent=e.target.value+"%");
+$("#topa").addEventListener("input",e=>$("#topaval").textContent=e.target.value+"%");
+function collect(){
+  const F=[]; const v=id=>$("#"+id).value;
+  F.push(["file","@"+(pdf?pdf.name:"documento.pdf")]);
+  F.push(["mode",v("mode")]);
+  ["name","reason","location","contact"].forEach(k=>{if(v(k))F.push([k,v(k)]);});
+  let tsa=v("tsasel"); if(tsa==="__custom__")tsa=v("tsacustom"); if(tsa)F.push(["tsa_url",tsa]);
+  if($("#visible").checked){
+    F.push(["visible","true"]); F.push(["page",v("page")||1]);
+    F.push(["box",[v("x1"),v("y1"),v("x2"),v("y2")].join(",")]);
+    F.push(["stamp_source",v("stampsrc")]);
+    if(v("stampsrc")==="custom"&&v("stext"))F.push(["stamp_text",v("stext")]);
+    F.push(["image_mode",v("imgmode")]);
+    if(v("imgw"))F.push(["image_width",v("imgw")]);
+    F.push(["image_opacity",($("#opa").value/100).toFixed(2)]);
+    F.push(["text_opacity",($("#topa").value/100).toFixed(2)]);
+    F.push(["border",$("#border").checked?"true":"false"]);
+    F.push(["border_width",v("bw")||0]);
+    if($("#simg").files[0])F.push(["stamp_image","@"+$("#simg").files[0].name]);
+  }
+  return F;
+}
+function esc(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function curlText(F){ let s="curl -X POST "+API+"/v1/signatures/pdf"; F.forEach(p=>{ s+=" \\\n  -F \""+p[0]+"="+p[1]+"\""; }); return s; }
+function curlHtml(F){ let h='<span class="tok-cmd">curl</span> -X POST '+esc(API)+'/v1/signatures/pdf'; F.forEach(p=>{ h+=' \\\n  <span class="tok-flag">-F</span> "<span class="tok-str">'+esc(p[0]+"="+p[1])+'</span>"'; }); return h; }
+function updateCurl(){ const F=collect(); $("#curl").innerHTML=curlHtml(F); $("#curl").dataset.plain=curlText(F); }
+document.querySelectorAll("input,select,textarea").forEach(el=>{el.addEventListener("input",updateCurl);el.addEventListener("change",updateCurl);});
+updateCurl();
+$("#cp").onclick=()=>{navigator.clipboard.writeText($("#curl").dataset.plain).then(()=>{$("#cp").textContent="✓ Copiado";setTimeout(()=>$("#cp").textContent="Copiar",1200);});};
+$("#dlc").onclick=()=>{const b=new Blob([$("#curl").dataset.plain],{type:"text/x-sh"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="firmar.sh";a.click();URL.revokeObjectURL(u);};
 const SP='<span class="spin"></span>';
-function steps(h){$("#log").innerHTML=h;}
+function steps(h){$("#result").innerHTML=h;}
 $("#go").onclick=async()=>{
   if(!pdf)return; $("#go").disabled=true; $("#dl").style.display="none";
   steps('<div class="step">'+SP+' Subiendo el documento…</div>');
   try{
     const fd=new FormData(); fd.append("file",pdf); fd.append("mode",$("#mode").value);
     ["name","reason","location","contact"].forEach(k=>{if($("#"+k).value)fd.append(k,$("#"+k).value);});
-    let _tsa=$("#tsasel").value; if(_tsa==="__custom__") _tsa=$("#tsacustom").value;
-    if(_tsa) fd.append("tsa_url",_tsa);
+    let tsa=$("#tsasel").value; if(tsa==="__custom__")tsa=$("#tsacustom").value; if(tsa)fd.append("tsa_url",tsa);
     if($("#visible").checked){
       fd.append("visible","true"); fd.append("page",$("#page").value||1);
       fd.append("box",[$("#x1").value,$("#y1").value,$("#x2").value,$("#y2").value].join(","));
       fd.append("stamp_source",$("#stampsrc").value);
-      if($("#stampsrc").value==="custom" && $("#stext").value) fd.append("stamp_text",$("#stext").value);
+      if($("#stampsrc").value==="custom"&&$("#stext").value)fd.append("stamp_text",$("#stext").value);
       fd.append("image_mode",$("#imgmode").value);
-      if($("#imgw").value) fd.append("image_width",$("#imgw").value);
+      if($("#imgw").value)fd.append("image_width",$("#imgw").value);
       fd.append("image_opacity",($("#opa").value/100).toFixed(2));
       fd.append("text_opacity",($("#topa").value/100).toFixed(2));
       fd.append("border",$("#border").checked?"true":"false");
       fd.append("border_width",$("#bw").value||0);
-      if($("#simg").files[0]) fd.append("stamp_image",$("#simg").files[0]);
+      if($("#simg").files[0])fd.append("stamp_image",$("#simg").files[0]);
     }
     const r=await fetch(API+"/v1/signatures/pdf",{method:"POST",body:fd});
-    if(!r.ok){const t=await r.text();throw new Error(r.status==503?"No hay ningún miniHSM en línea.":("Error "+r.status+": "+t));}
-    const {requestId}=await r.json();
-    steps('<div class="step ok">✓ Documento recibido</div><div class="step">'+SP+' Esperando que el miniHSM firme (~25 s)…</div>');
-    const blob=await poll(requestId);
+    if(!r.ok){const t=await r.text();throw new Error(r.status==503?"No hay miniHSM en línea.":("Error "+r.status+": "+t));}
+    const j=await r.json();
+    steps('<div class="step ok">✓ Documento recibido</div><div class="step">'+SP+' Esperando que el miniHSM firme (~25 s)…</div><div class="muted">'+j.requestId+'</div>');
+    const blob=await poll(j.requestId);
     $("#dllink").href=URL.createObjectURL(blob); $("#dllink").download="firmado_"+pdf.name;
-    steps('<div class="step ok">✓ Documento recibido</div><div class="step ok">✓ Firmado por el miniHSM</div>');
+    steps('<div class="step ok">✓ Documento recibido</div><div class="step ok">✓ Firmado por el miniHSM</div><div class="muted">'+j.requestId+'</div>');
     $("#dl").style.display="block";
   }catch(e){steps('<div class="step err">✗ '+e.message+'</div>');}
   $("#go").disabled=false;
