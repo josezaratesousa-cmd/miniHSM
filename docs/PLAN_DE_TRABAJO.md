@@ -82,7 +82,7 @@
 ---
 
 ## PROGRESO GLOBAL
-- Fase 1: ☐ en curso (Bloque 9 match: HECHO server+firmware, falta validar en device fisico)
+- Fase 1: ✅ Bloque 9 match VALIDADO en hardware real (device emparejado, secret compartido)
 - Fase 2: ☐
 - Fase 3: ☐
 - Fase 4: ☐

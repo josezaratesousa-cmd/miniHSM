@@ -1069,3 +1069,15 @@ mbedtls_hkdf y similares NO se compilan por defecto. Al usar una funcion mbedTLS
 nueva hay que habilitar su CONFIG_MBEDTLS_*_C en sdkconfig.defaults o da
 "undefined reference" en el LINK (no en compilacion). El match necesito
 CONFIG_MBEDTLS_HKDF_C=y. ECDH/ECP/GCM/MD ya venian por defecto.
+
+### Bloque 9 — VALIDADO EN HARDWARE REAL (2026-06-11)
+Match completo funcionando en device fisico (build 33, commit c0fdf74).
+Log: ecies_decrypt ret=0, secret provisionado y guardado en NVS, MATCH OK.
+Server: device matriculado automaticamente + pubkey TOFU + secret entregado.
+Cadena de fixes que tomo llegar aqui:
+1. CONFIG_MBEDTLS_HKDF_C=y (link de mbedtls_hkdf)
+2. match en task dedicada stack 8192 (evita stack overflow en main)
+3. matricula automatica en vez de lista de vendidos previa
+4. lectura HTTP con open/write/read (perform consumia el stream)
+5. RNG en mbedtls_ecdh_compute_shared (NULL daba ECP_BAD_INPUT_DATA -20352)
+Ambos lados comparten el mismo HMAC secret. Fase 1 (nucleo) lista.
