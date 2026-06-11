@@ -10,6 +10,7 @@
 #include "mbedtls/hkdf.h"
 #include "mbedtls/gcm.h"
 #include "mbedtls/md.h"
+#include "esp_random.h"
 
 static const char *TAG = "match";
 
@@ -19,6 +20,14 @@ static const char *TAG = "match";
 #define ECIES_MIN_LEN     (ECIES_EPHPUB_LEN + ECIES_IV_LEN + ECIES_TAG_LEN)
 
 static const uint8_t HKDF_INFO[] = "xami-match-v1";
+
+/* RNG wrapper para mbedTLS (necesario en ecdh_compute_shared para blinding) */
+static int match_rng(void *ctx, unsigned char *buf, size_t len)
+{
+    (void)ctx;
+    esp_fill_random(buf, len);
+    return 0;
+}
 
 esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
                               uint8_t *out, size_t out_cap, size_t *out_len)
@@ -77,7 +86,7 @@ esp_err_t match_ecies_decrypt(const uint8_t *blob, size_t blob_len,
         if (rc) { ESP_LOGE(TAG, "read priv %d", rc); break; }
 
         /* ECDH: z = (d * Q_eph).X */
-        rc = mbedtls_ecdh_compute_shared(&grp, &z, &Q_eph, &d, NULL, NULL);
+        rc = mbedtls_ecdh_compute_shared(&grp, &z, &Q_eph, &d, match_rng, NULL);
         if (rc) { ESP_LOGW(TAG, "ecdh rc=%d", rc); break; }
 
         rc = mbedtls_mpi_write_binary(&z, shared, sizeof(shared));
