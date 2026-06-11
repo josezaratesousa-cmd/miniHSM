@@ -320,3 +320,8 @@ La misma cuenta puede ver el panel de usuario y -si es gestor- el de gestión.
 
 NO se toca firmware ni optimizador hasta las fases que lo requieran (marcadas en
 deuda técnica), y siempre coordinado.
+- DT11. TSA por usuario/device: hoy el TSA (sellado de tiempo RFC 3161) se define
+  a nivel TENANT (en `tenants.ca_config`), único para todas las firmas del cliente,
+  para simplificar. A futuro: permitir que un usuario o un deviceID concreto use un
+  TSA distinto al del tenant (override). Implicaría mover/duplicar el campo a
+  device_prefs con precedencia device > tenant. A analizar cuando surja el caso.

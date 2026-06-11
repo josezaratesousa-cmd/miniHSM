@@ -113,7 +113,7 @@ por un empleado de xami.run). Raíz del aislamiento multi-tenant.
 | nombre | VARCHAR(150) | Nombre legible del cliente. | `ACME Corp S.A.` |
 | estado | ENUM('activo','suspendido','baja') | Estado del tenant. | `activo` |
 | saldo_firmas | INT | Saldo de firmas disponible (billing). | 5000 |
-| ca_config | JSON | Parámetros del CA y config general del tenant. | `{"ca":"uanataca","perfil":"PJ"}` |
+| ca_config | JSON | Parámetros del CA y config general del tenant (incluye el TSA, único por tenant). | `{"ca":"uanataca","perfil":"PJ","tsa_url":"http://tsa.uanataca.com/tsa"}` |
 | created_at | DATETIME | Fecha de creación. | `2026-06-11 15:00:00` |
 
 ### 2.2 `users`
@@ -158,7 +158,7 @@ del sello puede evolucionar. Relación 1:1 con `devices`.
 |---|---|---|---|
 | id | BIGINT PK AUTO_INCREMENT | Identificador interno. | 50 |
 | device_id | BIGINT FK -> devices.id UNIQUE | Device al que pertenecen las prefs. | 30 |
-| sign_prefs | JSON | Preferencias del sello (ver 7.2 de DISENO_CONSOLE). | `{"name":"Ana Díaz","reason":"Aprobación","visible":true,"page":1,"box":"50,50,250,130","image_mode":"left","border":true}` |
+| sign_prefs | JSON | Preferencias del sello (ver 7.2 de DISENO_CONSOLE). NO incluye el TSA: el sellado de tiempo es único por tenant y vive en `tenants.ca_config`. | `{"name":"Ana Díaz","reason":"Aprobación","visible":true,"page":1,"box":"50,50,250,130","image_mode":"left","border":true}` |
 | updated_at | DATETIME | Última actualización de preferencias. | `2026-06-11 15:20:00` |
 
 ### 2.5 `ca_identity`
