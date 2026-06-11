@@ -55,7 +55,7 @@ async def sign_pdf_bytes(pdf_bytes: bytes, device_id: str,
                          location: str = "Peru") -> bytes:
     """Firma un PDF (bytes) con PAdES-B-B usando el device. Devuelve bytes firmados."""
     signer = PollingSigner(device_id)
-    w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes))
+    w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes), strict=False)
     fields.append_signature_field(w, SigFieldSpec("Signature1"))  # invisible
     meta = PdfSignatureMetadata(
         field_name="Signature1", reason=reason, location=location,
