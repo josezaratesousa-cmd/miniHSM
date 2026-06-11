@@ -2,13 +2,13 @@
 /* Xami · Panel — Login */
 require_once __DIR__ . '/lib/auth.php';
 auth_start();
-if (auth_check()) { header('Location: /console/app/'); exit; }
+if (auth_check()) { header('Location: /app/'); exit; }
 $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['user'] ?? '');
     $pass  = $_POST['pass'] ?? '';
     if (auth_login($email, $pass)) {
-        header('Location: /console/app/'); exit;
+        header('Location: /app/'); exit;
     }
     $err = 'Usuario o contraseña incorrectos.';
 }

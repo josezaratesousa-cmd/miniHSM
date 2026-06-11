@@ -11,7 +11,7 @@ $u = auth_require();
 <title>Xami · Panel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/console/assets/css/app.css">
+<link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
 <div id="app">
@@ -19,14 +19,14 @@ $u = auth_require();
   <header class="topbar">
     <div class="tb-left">
       <button id="toggleSidebar" class="icon-btn" title="Mostrar/ocultar menú" aria-label="Menú">&#9776;</button>
-      <a class="brand" href="/console/app/"><span class="brand-mark">&#128274;</span> Xami</a>
+      <a class="brand" href="/app/"><span class="brand-mark">&#128274;</span> Xami</a>
     </div>
     <div class="tb-right">
       <button class="icon-btn" title="Notificaciones" aria-label="Notificaciones">&#128276;</button>
       <div class="profile">
         <?php $em = $u['email'] ?? 'usuario@xami.run'; $ini = strtoupper(substr($em,0,2)); ?><span class="avatar"><?= htmlspecialchars($ini) ?></span>
         <span class="profile-email"><?= htmlspecialchars(explode('@', $em)[0]) ?></span>
-        <a class="logout" href="/console/logout.php" title="Salir">&#9211;</a>
+        <a class="logout" href="/logout.php" title="Salir">&#9211;</a>
       </div>
     </div>
   </header>
@@ -66,6 +66,6 @@ $u = auth_require();
   <div id="drawer" class="drawer"><div class="drawer-inner" id="drawerInner"></div></div>
   <div id="overlay" class="overlay"></div>
 </div>
-<script src="/console/assets/js/app.js"></script>
+<script src="/assets/js/app.js"></script>
 </body>
 </html>

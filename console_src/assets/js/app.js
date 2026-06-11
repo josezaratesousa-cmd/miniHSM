@@ -1,5 +1,5 @@
 'use strict';
-const API = '/console/app/api.php';
+const API = '/app/api.php';
 
 /* ---------- Sidebar: colapsar + redimensionar (localStorage) ---------- */
 const sidebar = document.getElementById('sidebar');
