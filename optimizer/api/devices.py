@@ -2,16 +2,39 @@
 Device registration & heartbeat endpoints.
 El miniHSM llama aquí cada 5 minutos.
 El serverHSM extrae la IP del request y la guarda.
+
+Bloque 10: el heartbeat ES el polling. Su respuesta lleva, ademas del registro,
+el trabajo de firma pendiente (si hay) y nextPollSeconds (ritmo dictado por server).
 """
 
 import logging
+import hmac
+import hashlib
+import secrets as _secrets
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from minihsm.registry import registry, DeviceEntry
+from minihsm import sold_devices, device_secrets, job_queue
+from minihsm.crypto_match import verify_proof_of_possession, ecies_encrypt
 
 log    = logging.getLogger("devices")
 router = APIRouter(prefix="/devices", tags=["devices"])
+
+# Ritmo de polling que el server dicta al device (segundos). Configurable por
+# panel web mas adelante (por device o global). Por ahora constante.
+NEXT_POLL_SECONDS = 25
+
+
+def _mint_kuser(secret_hex: str, ts: int, nonce: str) -> str:
+    """
+    Acuna un token KUser que el device validara con policy_validate_token.
+    Esquema EXACTO del firmware: HMAC-SHA256(secret, "minihsm:{ts}:{nonce}") hex.
+    El ts DEBE ser el reloj del device (el que mando en su heartbeat), porque el
+    device valida contra su esp_timer (uptime), no UTC (NTP pendiente, Bloque 0).
+    """
+    msg = f"minihsm:{ts}:{nonce}".encode()
+    return hmac.new(bytes.fromhex(secret_hex), msg, hashlib.sha256).hexdigest()
 
 
 class HeartbeatRequest(BaseModel):
@@ -23,44 +46,63 @@ class HeartbeatRequest(BaseModel):
 
 
 class HeartbeatResponse(BaseModel):
-    status:    str
-    deviceId:  str
-    ip:        str
-    message:   str
+    status:          str
+    deviceId:        str
+    ip:              str
+    message:         str
+    nextPollSeconds: int          = NEXT_POLL_SECONDS
+    job:             dict | None  = None
 
 
 @router.post("/heartbeat", response_model=HeartbeatResponse)
 def heartbeat(req: Request, body: HeartbeatRequest):
     """
-    Recibe el heartbeat del miniHSM.
-    Extrae la IP pública del request (funciona con NAT y proxies).
-    Guarda/actualiza la IP en el registro.
+    Recibe el heartbeat del miniHSM (= su polling).
+    Extrae la IP publica del request, registra, y de paso le entrega el trabajo
+    de firma pendiente (si hay) con un token recien acunado, y el ritmo de poll.
     """
-    # Extraer IP real (funciona detrás de proxies/CDN)
     ip = (
         req.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         or req.headers.get("X-Real-IP", "")
         or req.client.host
     )
-
     if not ip:
         raise HTTPException(400, "Cannot determine client IP")
 
-    # TODO: validar token HMAC con el secret del device
-    # Por ahora registramos y logueamos
-    entry = registry.register(
-        device_id = body.deviceId,
-        ip        = ip,
-        firmware  = body.firmware,
-    )
-
+    # TODO: validar token HMAC del heartbeat con el secret del device
+    registry.register(device_id=body.deviceId, ip=ip, firmware=body.firmware)
     log.info(f"Heartbeat from {body.deviceId} @ {ip} (firmware={body.firmware})")
 
+    # Bloque 10: hay trabajo pendiente para este device?
+    job_payload = None
+    pending = job_queue.next_pending(body.deviceId)
+    if pending:
+        secret = device_secrets.get_secret(body.deviceId)
+        if not secret:
+            log.warning(f"Job {pending['requestId']} pero device {body.deviceId} "
+                        f"sin secret (no emparejado). No se entrega.")
+        else:
+            # Token fresco usando el reloj que el device acaba de reportar.
+            ts    = body.timestamp
+            nonce = _secrets.token_hex(8)
+            kuser = _mint_kuser(secret, ts, nonce)
+            job_queue.mark_delivered(body.deviceId, pending["requestId"])
+            job_payload = {
+                "requestId": pending["requestId"],
+                "digest":    pending["digest"],
+                "kuser":     kuser,
+                "ts":        ts,
+                "nonce":     nonce,
+            }
+            log.info(f"Heartbeat entrega job {pending['requestId']} a {body.deviceId}")
+
     return HeartbeatResponse(
-        status   = "ok",
-        deviceId = body.deviceId,
-        ip       = ip,
-        message  = "registered",
+        status          = "ok",
+        deviceId        = body.deviceId,
+        ip              = ip,
+        message         = "registered",
+        nextPollSeconds = NEXT_POLL_SECONDS,
+        job             = job_payload,
     )
 
 
@@ -102,10 +144,6 @@ def get_device(device_id: str):
 
 # ── Emparejamiento (match) — Bloque 9 ─────────────────────────────────────────
 
-from minihsm import sold_devices, device_secrets
-from minihsm.crypto_match import verify_proof_of_possession, ecies_encrypt
-
-
 class MatchRequest(BaseModel):
     deviceId:  str
     pubkey:    str          # EC P-256 uncompressed, hex (04||X||Y)
@@ -120,27 +158,23 @@ class MatchResponse(BaseModel):
     status:          str
     deviceId:        str
     message:         str
-    secretsEncrypted: str   # blob ECIES (hex): contiene el HMAC secret cifrado con la pubkey del device
+    secretsEncrypted: str   # blob ECIES (hex): HMAC secret cifrado con la pubkey
 
 
 @router.post("/match", response_model=MatchResponse)
 def match(req: Request, body: MatchRequest):
     """
-    Emparejamiento de un Xami con el server (Bloque 9, Capa 1).
-    Verifica: deviceID vendido + proof of possession. Registra la pubkey (TOFU A1).
-    La entrega de secretos cifrados (ECIES) se agrega en Capa 2.
+    Emparejamiento de un Xami con el server (Bloque 9).
+    Verifica: no-bloqueado + proof of possession. Matricula TOFU. Entrega secret
+    cifrado (ECIES).
     """
-    # 1. Bloqueado? (unico motivo de rechazo por identidad: reclamacion/fraude)
     if sold_devices.is_blocked(body.deviceId):
         raise HTTPException(403, f"Device {body.deviceId} is blocked")
 
-    # 2. Matricula automatica (TOFU): si el device no esta registrado, se da de alta
-    #    en el primer match. Modelo A1: confiar y matricular, con poder de bloquear luego.
     if not sold_devices.is_sold(body.deviceId):
         sold_devices.register_sold(body.deviceId, note="auto-matriculado en primer match")
         log.info(f"Match: {body.deviceId} MATRICULADO automaticamente (primer contacto)")
 
-    # 3. Proof of possession: la firma valida contra la pubkey declarada?
     challenge = f"{body.deviceId}:{body.timestamp}:{body.nonce}".encode()
     try:
         sig_der = bytes.fromhex(body.signature)
@@ -150,8 +184,6 @@ def match(req: Request, body: MatchRequest):
     if not verify_proof_of_possession(body.pubkey, challenge, sig_der):
         raise HTTPException(401, "Invalid proof of possession")
 
-    # 4. TOFU (Trust On First Use) para A1: si no hay pubkey registrada, la guardamos.
-    #    Si ya hay una y NO coincide -> posible suplantacion -> rechazar.
     known = sold_devices.get_pubkey(body.deviceId)
     if known is None:
         sold_devices.set_pubkey(body.deviceId, body.pubkey)
@@ -159,12 +191,10 @@ def match(req: Request, body: MatchRequest):
     elif known != body.pubkey:
         raise HTTPException(409, "pubkey mismatch — posible suplantacion")
 
-    # Registrar IP/estado
     ip = (req.headers.get("X-Forwarded-For", "").split(",")[0].strip()
           or req.client.host)
     registry.register(device_id=body.deviceId, ip=ip)
 
-    # 5. Generar el HMAC secret (32 bytes), guardarlo, y cifrarlo con ECIES para el device
     hmac_secret = device_secrets.generate_hmac_secret()
     device_secrets.set_secret(body.deviceId, hmac_secret.hex())
     blob = ecies_encrypt(body.pubkey, hmac_secret)
@@ -176,3 +206,49 @@ def match(req: Request, body: MatchRequest):
         message          = "matched - secret entregado cifrado",
         secretsEncrypted = blob,
     )
+
+
+# ── Cola de trabajos de firma — Bloque 10 ─────────────────────────────────────
+
+class EnqueueJobRequest(BaseModel):
+    digest: str            # SHA-256 a firmar, 64 hex
+
+
+class JobResultRequest(BaseModel):
+    signature: str = ""    # firma DER hex
+    cert:      str = ""    # certificado (PEM/DER segun device)
+    status:    str = "DONE"
+    error:     str = ""
+
+
+@router.post("/{device_id}/jobs")
+def enqueue_job(device_id: str, body: EnqueueJobRequest):
+    """Encola un trabajo de firma para el device (lo llama la web al subir doc).
+       El device lo recogera en su proximo heartbeat."""
+    digest = body.digest.strip().lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise HTTPException(400, "digest must be 64 hex chars (SHA-256)")
+    rid = job_queue.enqueue(device_id, digest)
+    log.info(f"Job encolado {rid} para {device_id}")
+    return {"status": "queued", "deviceId": device_id, "requestId": rid}
+
+
+@router.post("/{device_id}/jobs/{request_id}/result")
+def post_job_result(device_id: str, request_id: str, body: JobResultRequest):
+    """El device postea el resultado de la firma."""
+    status = job_queue.DONE if body.status == "DONE" else job_queue.ERROR
+    result = {"signature": body.signature, "cert": body.cert, "error": body.error}
+    ok = job_queue.set_result(device_id, request_id, result, status=status)
+    if not ok:
+        raise HTTPException(404, f"Job {request_id} not found for {device_id}")
+    log.info(f"Job {request_id} de {device_id} -> {status}")
+    return {"status": "ok", "requestId": request_id, "jobStatus": status}
+
+
+@router.get("/{device_id}/jobs/{request_id}")
+def get_job(device_id: str, request_id: str):
+    """La web consulta el estado/resultado de un trabajo."""
+    j = job_queue.get(device_id, request_id)
+    if not j:
+        raise HTTPException(404, f"Job {request_id} not found for {device_id}")
+    return j

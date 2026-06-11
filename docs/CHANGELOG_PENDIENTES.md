@@ -1150,3 +1150,17 @@ FIRMWARE - heartbeat.c:
 
 E2E: web encola -> device recoge en su heartbeat -> firma -> postea result ->
 web lee result. Primera validacion de firma real end-to-end (Fase 1.1).
+
+### Bloque 10 — AVANCE: SERVER hecho y probado (2026-06-11)
+- minihsm/job_queue.py: cola RAM thread-safe. enqueue/next_pending/mark_delivered/
+  set_result/get. Estados PENDING->DELIVERED->DONE/ERROR. Probado unitario OK.
+- api/devices.py: heartbeat extendido (pickup de job + nextPollSeconds=25) +
+  _mint_kuser (HMAC "minihsm:{ts}:{nonce}" con secret del match, ts=reloj del device
+  del propio heartbeat) + 3 endpoints: POST /devices/{id}/jobs (encolar),
+  POST .../jobs/{rid}/result, GET .../jobs/{rid}.
+- Probado e2e logico (sin HTTP, venv no tiene httpx): kuser coincide byte a byte
+  con la formula del firmware, ts=reloj device, segundo poll no re-entrega,
+  ciclo completo hasta DONE. Rutas registradas OK.
+- PENDIENTE server: el service xami-optimizer corre el codigo VIEJO en RAM; hay que
+  reiniciarlo para que tome los cambios (antes de probar con device real).
+- PENDIENTE: lado FIRMWARE (heartbeat.c) - parsear job+nextPollSeconds, firmar, postear.
