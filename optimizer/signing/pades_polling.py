@@ -17,6 +17,7 @@ from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from pyhanko.stamp import TextStampStyle
 from pyhanko.pdf_utils.images import PdfImage
+from pyhanko.pdf_utils.text import TextBoxStyle
 from pyhanko.pdf_utils.layout import (
     SimpleBoxLayoutRule, AxisAlignment, Margins, InnerScaling)
 try:
@@ -60,10 +61,20 @@ class PollingSigner(signers.Signer):
         raise TimeoutError("el device no firmo dentro del tiempo limite")
 
 
-def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box):
+def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
+                       text_opacity=1.0, border=True, border_width=3):
     """Arma el TextStampStyle. image_mode: 'background' (fondo) | 'left' (imagen
-    a la izquierda, texto a la derecha)."""
-    kw = dict(stamp_text=stamp_text, background=bg, background_opacity=image_opacity)
+    a la izquierda, texto a la derecha). text_opacity<1 atenua el texto via color
+    (pyhanko no soporta alpha real en texto). border/border_width: marco de toda
+    la firma (imagen + texto)."""
+    tb = {}
+    if text_opacity is not None and float(text_opacity) < 1.0:
+        g = round(1.0 - float(text_opacity), 3)
+        tb["text_color"] = (g, g, g)
+    text_box_style = TextBoxStyle(**tb) if tb else TextBoxStyle()
+    kw = dict(stamp_text=stamp_text, background=bg, background_opacity=image_opacity,
+              text_box_style=text_box_style,
+              border_width=(int(border_width) if border else 0))
     if bg is not None and image_mode == "left" and box:
         w_box = abs(box[2] - box[0])
         img_w = 0.40 * w_box
@@ -92,7 +103,10 @@ async def sign_pdf_bytes(
     stamp_image_bytes: bytes | None = None,
     stamp_text: str | None = None,
     image_opacity: float = 0.5,
+    text_opacity: float = 1.0,
     image_mode: str = "background",      # background | left
+    border: bool = True,
+    border_width: int = 3,
     certify: bool = False,
     tsa_url: str | None = None,          # RFC 3161 -> PAdES-T
 ) -> bytes:
@@ -117,7 +131,9 @@ async def sign_pdf_bytes(
             from PIL import Image
             bg = PdfImage(Image.open(io.BytesIO(stamp_image_bytes)))
         text = stamp_text if stamp_text is not None else DEFAULT_STAMP_TEXT
-        stamp_style = _build_stamp_style(text, bg, image_opacity, image_mode, box)
+        stamp_style = _build_stamp_style(
+            text, bg, image_opacity, image_mode, box,
+            text_opacity=text_opacity, border=border, border_width=border_width)
 
     timestamper = HTTPTimeStamper(tsa_url) if tsa_url else None
     pdf_signer = signers.PdfSigner(

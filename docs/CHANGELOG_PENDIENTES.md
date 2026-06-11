@@ -1407,3 +1407,14 @@ Fix4 - Disposicion de imagen del sello (param image_mode): 'background' (fondo, 
 Validado en hardware (00da0f3b57ec8f14): image_mode=left OK, TSA OK (PAdES-T).
 Copia versionada de la web en optimizer/web/firmar.html (la activa vive en
 public_html/firmar/index.html, fuera del repo).
+
+### BLOQUE 8 F2: TSA select + opacidad texto + borde (2026-06-11)
+- Web /firmar: TSA pasa de input libre a SELECT con TSAs estandar (FreeTSA, DigiCert,
+  Sectigo, Certum) + "Personalizada" (muestra input para URL a mano) + "Sin sellado".
+- Opacidad de IMAGEN y de TEXTO separadas (sliders). text_opacity<1 se implementa como
+  atenuacion via TextBoxStyle.text_color=(g,g,g), g=1-opacidad (pyhanko NO soporta alpha
+  real en texto; sobre fondo claro luce como opacidad, sobre imagen la aclara).
+- BORDE de toda la firma (imagen+texto) con ANCHO configurable, via BaseStampStyle
+  border_width (0 = sin borde). Params nuevos en /v1/signatures/pdf: text_opacity,
+  border (bool), border_width (int).
+Validado en hardware: firma con border_width=3 + text_opacity=0.55 + image_mode=left OK.
