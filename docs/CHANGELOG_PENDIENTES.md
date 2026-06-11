@@ -1164,3 +1164,20 @@ web lee result. Primera validacion de firma real end-to-end (Fase 1.1).
 - PENDIENTE server: el service xami-optimizer corre el codigo VIEJO en RAM; hay que
   reiniciarlo para que tome los cambios (antes de probar con device real).
 - PENDIENTE: lado FIRMWARE (heartbeat.c) - parsear job+nextPollSeconds, firmar, postear.
+
+### Bloque 10 — AVANCE: FIRMWARE hecho (2026-06-11) - pendiente build+flash
+heartbeat.c reescrito:
+- Stack 4096->8192 (firma inline; 8192 = numero probado en match).
+- MAX_RESP_LEN 256->768 (cabe el job).
+- Lectura HTTP cambiada a open/write/fetch_headers/read (perform consumia el
+  stream, igual que el fix del match). Antes la resp se ignoraba.
+- Parsea nextPollSeconds -> s_interval_sec (RAM). Al reboot vuelve a 300.
+- Parsea job -> process_signing_job: valida kuser (policy_validate_token),
+  crypto_hex_to_bytes(digest), vault_sign -> DER, cert_get_pem, y postea a
+  POST /devices/{id}/jobs/{rid}/result {signature,cert,status}.
+- Cierra el cliente del heartbeat ANTES de firmar/postear (1 TLS a la vez).
+- Buffers grandes (sig_hex, cert_pem, url, resp_buf) en static (no stack).
+DECISION: firma inline en la task del heartbeat (no task dedicada) por simplicidad;
+si en hardware da stack overflow, migrar a task dedicada 8192 como el match.
+PENDIENTE: push -> build CI (firmware-v34) -> usuario flashea -> e2e firma real.
+PENDIENTE: reiniciar xami-optimizer.service para que el server tome el codigo nuevo.
