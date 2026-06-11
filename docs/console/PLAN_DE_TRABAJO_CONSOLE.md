@@ -9,6 +9,34 @@
 
 ---
 
+---
+
+## ESTADO ACTUAL (actualizado 2026-06-11)
+
+- FASE 0 — COMPLETA. BD con 9 tablas (8 + sign_events), datos de prueba, endpoints
+  documentados, conexion PHP<->BD (lib/db.php). Aplicado y verificado.
+- FASE 1 — Panel de usuario EN CURSO (bien avanzada):
+  - Analisis (1.A), mockups+aprobacion (1.B), diseno (1.C): HECHOS.
+  - Construccion (1.E): HECHO -> login real (bcrypt), shell header+sidebar
+    (colapsable/redimensionable/localStorage), bandejas Pendientes/Firmados/
+    Rechazados desde BD, drawer detalle con tabs Documento/Trazabilidad, Mis
+    dispositivos, tema claro/oscuro recordado.
+  - PARCIAL/PENDIENTE en 1.E: Enviar a firmar (encolar real), Firmar/Rechazar/
+    Descargar (hoy placeholders), pantallas Mis preferencias y Mi consumo,
+    apurar cola + Web Serial (subfase posterior).
+  - 1.D docs de desarrollo: PARCIAL (ENDPOINTS.md + SQL hechos; falta doc de
+    contexto/convenciones consolidado).
+  - 1.F pruebas formales: PENDIENTE.
+- El panel corre en https://console.xami.run (login demo@xami.run / xami1234).
+- Codigo versionado en console_src/ del repo (sin .env). No se toca firmware ni
+  optimizador; el panel los consumira como guardian.
+
+SIGUIENTE: flujo de firma real (Enviar a firmar -> encolar en optimizador ->
+Firmar/Rechazar/Descargar), conectando el panel (guardian) con los endpoints
+existentes del optimizador.
+
+---
+
 ## Metodología
 
 Cada panel se construye con este ciclo de documentos y aprobaciones:
@@ -46,17 +74,17 @@ flujo de firma real de punta a punta desde su panel cuanto antes.
 
 Objetivo: dejar la base lista para construir paneles encima.
 
-- [ ] 0.1 Crear la estructura de carpetas de documentación:
+- [x] 0.1 Crear la estructura de carpetas de documentación:
   `/docs/console/analisis`, `/diseno`, `/desarrollo`, `/produccion`, `/pruebas`. (HECHO)
-- [ ] 0.2 Crear las tablas en `xami_db` según `docs/BD/DISENO_BD.md` (8 tablas,
+- [x] 0.2 Crear las tablas en `xami_db` según `docs/BD/DISENO_BD.md` (8 tablas,
   InnoDB, utf8mb4). Script SQL versionado.
-- [ ] 0.3 Cargar datos por defecto para pruebas: 1 tenant de prueba, 1 usuario
+- [x] 0.3 Cargar datos por defecto para pruebas: 1 tenant de prueba, 1 usuario
   dueño, el deviceID real ya conectado (`fe4dfede3b10c54b`) asignado a ese usuario,
   un saldo de firmas. (Para poder probar el panel de usuario de inmediato.)
-- [ ] 0.4 Definir los endpoints (contrato) de cada panel — documento en
+- [x] 0.4 Definir los endpoints (contrato) de cada panel — documento en
   `/desarrollo`. Separar: endpoints que console expone (PHP) vs endpoints del
   optimizador que console consume (guardián). Tabla método/ruta/entrada/salida/rol.
-- [ ] 0.5 Verificar conexión PHP<->BD desde console (lectura robusta del `.env`
+- [x] 0.5 Verificar conexión PHP<->BD desde console (lectura robusta del `.env`
   con `~` en el password) y un "hola BD" que liste las tablas.
 
 Prueba de Fase 0 (usuario): ver las 8 tablas creadas en phpMyAdmin/cPanel y los
@@ -71,17 +99,17 @@ quedar matriculado para el usuario de prueba (Fase 0.3), aún sin login formal,
 para poder probar el panel cuanto antes.
 
 ### 1.A Análisis
-- [ ] 1.A.1 Documento de especificaciones funcionales del panel de usuario en
+- [x] 1.A.1 Documento de especificaciones funcionales del panel de usuario en
   `/docs/console/analisis/PANEL_USUARIO.md`: qué ve y hace el usuario (mis devices,
   preferencias de firma reutilizables, enviar a firmar, ver cola, apurar cola en
   misma red, log por Web Serial en misma red, avanzado oculto).
 
 ### 1.B Mockup
-- [ ] 1.B.1 Diseño de mockup navegable del panel de usuario.
-- [ ] 1.B.2 Aprobación del mockup por el usuario. (NO se sigue sin aprobación.)
+- [x] 1.B.1 Diseño de mockup navegable del panel de usuario.
+- [x] 1.B.2 Aprobación del mockup por el usuario. (NO se sigue sin aprobación.)
 
 ### 1.C Diseño
-- [ ] 1.C.1 Documento de diseño en `/docs/console/diseno/PANEL_USUARIO.md`:
+- [x] 1.C.1 Documento de diseño en `/docs/console/diseno/PANEL_USUARIO.md`:
   pantallas, componentes, flujos, qué datos usa de la BD, qué endpoints llama.
 
 ### 1.D Desarrollo (documentación técnica para la IA)
@@ -94,11 +122,11 @@ para poder probar el panel cuanto antes.
   aislamiento por tenant, manejo de secretos). Pueden ser varios documentos.
 
 ### 1.E Construcción
-- [ ] 1.E.1 Login del usuario (sobre el index.php ya existente en /console).
-- [ ] 1.E.2 Vista "mis devices" (lista + estado de polling leído del optimizador).
+- [x] 1.E.1 Login del usuario (sobre el index.php ya existente en /console).
+- [x] 1.E.2 Vista "mis devices" (lista + estado de polling leído del optimizador).
 - [ ] 1.E.3 Preferencias de firma reutilizables (form que guarda sign_prefs).
 - [ ] 1.E.4 Enviar a firmar (subir PDF -> guardián -> encola en optimizador).
-- [ ] 1.E.5 Ver cola / estado de la firma (consulta el job).
+- [x] 1.E.5 Ver cola / estado de la firma (consulta el job).
 - [ ] 1.E.6 Apurar cola (botón activo solo en misma red) — puede quedar parcial.
 - [ ] 1.E.7 Log por Web Serial (UI amigable) — puede quedar para 1.F o fase aparte.
 
