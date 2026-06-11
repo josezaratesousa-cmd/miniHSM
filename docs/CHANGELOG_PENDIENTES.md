@@ -1333,3 +1333,24 @@ rechaza (pdf_signer.py: if prev.strict and prev.xrefs.hybrid_xrefs_present -> ra
 Fix: construir el writer con strict=False en signing/pades_polling.py. pyhanko
 maneja los xref hibridos de forma tolerante y, de paso, acepta mejor PDFs reales.
 La firma resultante sigue siendo PAdES valida.
+
+### BLOQUE 8 F2: firma VISIBLE + modo APPROVAL/CERTIFY (2026-06-11)
+/v1/signatures/pdf ahora acepta:
+- visible (bool), page (1-indexed), box ("x1,y1,x2,y2" puntos PDF), stamp_image
+  (UploadFile, va de fondo del sello via PdfImage), stamp_text (placeholders de
+  pyhanko: %(signer)s, %(ts)s; OJO no existe %(nl)s, usar salto de linea real),
+  image_opacity (0..1).
+- mode: "approval" (default, DocMDP FILL_FORMS -> se pueden agregar mas firmas) o
+  "certify" (DocMDP NO_CHANGES, P=1 -> sella el documento, no mas firmas/cambios).
+Motor: signing/pades_polling.sign_pdf_bytes usa signers.PdfSigner con TextStampStyle
+(+ PdfImage de fondo) y new_field_spec=SigFieldSpec(on_page,box). Firma INVISIBLE si
+visible=False (igual que antes).
+Validado en hardware (device 00da0f3b57ec8f14):
+- visible: intact/valid/trusted True, Rect del campo = box pedido [40,40,360,170].
+- certify: /Perms/DocMDP presente, nivel P=1 (NO_CHANGES) confirmado.
+Aclaracion: ENTIRE_FILE (cobertura del ByteRange) NO impide firmas posteriores; lo
+que controla eso es approval vs certify (DocMDP). Por eso se expuso "mode", no un
+toggle de ENTIRE_FILE.
+Web xami.run/firmar/ actualizada con controles: modo, firma visible (pagina,
+coordenadas, imagen de sello, texto). NOTA: la pagina vive en public_html/firmar/
+(fuera del repo).
