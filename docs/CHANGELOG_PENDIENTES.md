@@ -1104,3 +1104,49 @@ Flujo:
 Descartado por ahora: WebSocket directo (N conexiones, no escala) y MQTT con
 broker (infra extra). Polling = lo mas simple que resuelve el problema real.
 SERA LO PRIMERO A IMPLEMENTAR para probar la firma end-to-end.
+
+### Bloque 10 — Diseño de implementacion (REUSA EL HEARTBEAT, no endpoint nuevo)
+
+DECISION (aclarada 2026-06-11): el poll NO es un GET /jobs separado. Se REUSA el
+heartbeat existente (POST /devices/heartbeat), que YA es el polling. La respuesta
+del heartbeat pasa a llevar 2 cosas nuevas: el job (si hay) y nextPollSeconds.
+
+POR QUE reusar el heartbeat (no es solo comodidad): el token del job lo genera el
+SERVER y lo valida el device con policy_validate_token, que exige timestamp dentro
+de ventana +/-30s contra SU reloj. Pero el reloj del device es esp_timer (segundos
+desde arranque), NO UTC (NTP/Bloque 0 pendiente). El server no conoce ese uptime...
+salvo que el device se lo acaba de mandar EN el heartbeat (campo timestamp). Asi el
+server acuna el token usando ESE timestamp -> el device valida 1 fraccion de seg
+despues -> diff ~0, dentro de ventana. Un GET /jobs separado no tendria ese reloj.
+
+nextPollSeconds (ritmo dictado por el server):
+- El server decide el intervalo y lo manda en CADA respuesta de heartbeat.
+- El device lo guarda en RAM (la global s_interval_sec de heartbeat.c) y lo usa
+  para programar el proximo poll. Al reboot no esta en RAM -> usa el default
+  compilado (DEFAULT_INTERVAL_SEC=300) hasta el primer heartbeat, que lo redicta.
+- Abre la puerta a configurarlo por panel web (por device o global) sin reflashear.
+
+SERVER - piezas:
+- minihsm/job_queue.py: cola en RAM thread-safe por device. Job = {requestId,
+  deviceId, digest, status, result(sig+cert), createdAt}. Estados:
+  PENDING -> DELIVERED -> DONE/ERROR. Sobrevive nada al reinicio (RAM), ok para
+  e2e; persistir en JSON queda para despues si hace falta.
+- Heartbeat (POST /devices/heartbeat) extendido: tras registrar IP, busca job
+  PENDING del device. Si hay: acuna token FRESCO con device_secrets.get_secret()
+  usando como timestamp el body.timestamp del heartbeat (clave: reloj del device),
+  nonce nuevo aleatorio, kuser=HMAC-SHA256(secret,"minihsm:{ts}:{nonce}"). Marca
+  DELIVERED. Responde job={requestId,digest,kuser,ts,nonce}. Y nextPollSeconds.
+- POST /devices/{id}/jobs           encolar (lo llama la web al subir doc). -> requestId
+- POST /devices/{id}/jobs/{rid}/result  device postea sig+cert -> DONE.
+- GET  /devices/{id}/jobs/{rid}     la web consulta estado/resultado.
+
+FIRMWARE - heartbeat.c:
+- Subir MAX_RESP_LEN (256 -> 768) para que entre el job.
+- Parsear resp JSON: leer nextPollSeconds -> s_interval_sec. Leer job -> si hay,
+  validar kuser con policy + firmar digest con vault_sign + POST result.
+- OJO stack: vault_sign (ECDSA) puede no caber en stack 4096 del heartbeat (el
+  match necesito task dedicada 8192). Evaluar: subir stack del heartbeat o
+  despachar el firmado a task dedicada. Decidir al implementar firmware.
+
+E2E: web encola -> device recoge en su heartbeat -> firma -> postea result ->
+web lee result. Primera validacion de firma real end-to-end (Fase 1.1).
