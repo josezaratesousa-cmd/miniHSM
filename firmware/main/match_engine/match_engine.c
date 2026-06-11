@@ -153,7 +153,7 @@ esp_err_t match_perform(const char *server_url)
 
     /* challenge = "deviceId:ts:nonce" */
     int64_t ts = esp_timer_get_time() / 1000000LL;
-    char nonce[17];
+    char nonce[24];
     snprintf(nonce, sizeof(nonce), "%lld", (long long)(ts ^ 0x9A1C));
     char challenge[96];
     int ch_len = snprintf(challenge, sizeof(challenge), "%s:%lld:%s",
