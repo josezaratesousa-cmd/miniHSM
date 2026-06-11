@@ -73,8 +73,8 @@
 
 ## EN PARALELO (no bloquean, cuando haya hueco)
 - [ ] Recuperación de red completa (escalera + portal con contexto) [CHANGELOG: "DISEÑO — Recuperación de red"]
-- [ ] Bug: /health optimizer se cuelga sin device (timeout corto)
-- [ ] Bug: /openapi.json error 500 pydantic (LoadCertRequest model_rebuild)
+- [x] Bug: /health colgaba (conexion directa al device, imposible con NAT) -> ahora via registro heartbeats
+- [x] Bug: /openapi.json 500 (forward-ref LoadCertRequest) -> resuelto, /docs OK
 - [ ] Borrar código viejo /home/fileserver/.../serverHSM tras validar api.xami.run
 - [ ] Ceremonia CA (Nivel B verde en Acrobat)
 - [ ] Subir vaultStamping.js y colección UANATACA a docs/referencias/
@@ -83,6 +83,9 @@
 
 ## PROGRESO GLOBAL
 - Fase 1: ✅ Bloque 9 match VALIDADO en hardware real (device emparejado, secret compartido)
+- Bloque 10 (polling firma): SOFTWARE LISTO (server probado+desplegado, firmware-v35 build OK).
+  Pendiente: flasheo v35 + e2e firma real (1.1) -> valida la firma end-to-end.
+- Bugs en paralelo /health y /openapi.json: RESUELTOS.
 - Fase 2: ☐
 - Fase 3: ☐
 - Fase 4: ☐
