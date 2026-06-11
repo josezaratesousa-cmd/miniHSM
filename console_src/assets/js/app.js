@@ -1,6 +1,27 @@
 'use strict';
 const API = '/app/api.php';
 
+/* ---------- Tema claro/oscuro (recordado en localStorage) ---------- */
+(function initTheme(){
+  var t = localStorage.getItem('xami_theme') || 'light';
+  if (t === 'dark') document.documentElement.setAttribute('data-theme','dark');
+})();
+function applyThemeIcon(){
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var btn = document.getElementById('themeToggle');
+  if (btn) btn.innerHTML = dark ? '\u2600' : '\u263e';
+}
+document.addEventListener('DOMContentLoaded', function(){
+  applyThemeIcon();
+  var btn = document.getElementById('themeToggle');
+  if (btn) btn.addEventListener('click', function(){
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (dark){ document.documentElement.removeAttribute('data-theme'); localStorage.setItem('xami_theme','light'); }
+    else { document.documentElement.setAttribute('data-theme','dark'); localStorage.setItem('xami_theme','dark'); }
+    applyThemeIcon();
+  });
+});
+
 /* ---------- Sidebar: colapsar + redimensionar (localStorage) ---------- */
 const sidebar = document.getElementById('sidebar');
 const resizer = document.getElementById('resizer');

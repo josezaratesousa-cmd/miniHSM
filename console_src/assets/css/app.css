@@ -1,9 +1,14 @@
 :root{
+  --bg:#f4f6fb; --bg2:#ffffff; --panel:#eef2f9; --panel2:#e6edf7;
+  --ink:#1a2740; --muted:#5e708c; --line:#dde4ef;
+  --accent:#2b7fd4; --accent2:#7c5cff; --ok:#1f9e6e; --warn:#c77f12; --bad:#d64545;
+  --grad:linear-gradient(135deg,#4db8ff,#7c5cff);
+  --sidebar-w:230px;
+}
+[data-theme="dark"]{
   --bg:#0a0e1a; --bg2:#0d1424; --panel:#111a2e; --panel2:#16213d;
   --ink:#eaf0fb; --muted:#8da2c0; --line:#1e2c4a;
   --accent:#4db8ff; --accent2:#7c5cff; --ok:#37d39b; --warn:#ffb454; --bad:#ff6b6b;
-  --grad:linear-gradient(135deg,#4db8ff,#7c5cff);
-  --sidebar-w:230px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--ink);height:100vh;overflow:hidden}

@@ -12,6 +12,7 @@ $u = auth_require();
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/css/app.css">
+<script>(function(){try{if((localStorage.getItem("xami_theme")||"light")==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 </head>
 <body>
 <div id="app">
@@ -22,6 +23,7 @@ $u = auth_require();
       <a class="brand" href="/app/"><span class="brand-mark">&#128274;</span> Xami</a>
     </div>
     <div class="tb-right">
+      <button id="themeToggle" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema">&#9790;</button>
       <button class="icon-btn" title="Notificaciones" aria-label="Notificaciones">&#128276;</button>
       <div class="profile">
         <?php $em = $u['email'] ?? 'usuario@xami.run'; $ini = strtoupper(substr($em,0,2)); ?><span class="avatar"><?= htmlspecialchars($ini) ?></span>
