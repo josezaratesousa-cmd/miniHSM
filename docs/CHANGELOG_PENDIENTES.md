@@ -1449,3 +1449,19 @@ backup de la version vertical en public_html/firmar/index_backup_vertical.html.
 Validado en hardware (70% izq + acentos + em-dash): imagen 280x112 aspecto 2.5,
 texto por glifos sin BOM, sin padding. Muestra: descargas/sello_70_nuevo.png
 PENDIENTE: control de fondo de opacidad detras del texto (caja semiopaca).
+
+### BLOQUE 8 F2: PAdES real (subfilter) + validacion de digest (2026-06-11)
+AUDITORIA de reglas que imponiamos de mas. Corregidos:
+- j) SubFilter: el meta NO seteaba subfilter -> pyhanko generaba adbe.pkcs7.detached
+  (CMS basico de Adobe), NO PAdES, pese a venderse como PAdES. Se agrega
+  subfilter=SigSeedSubFilter.PADES -> ahora /SubFilter = ETSI.CAdES.detached (PAdES
+  real, base para PAdES-T/LTV). Verificado leyendo el /V del PDF firmado.
+- h) async_sign_raw ignoraba el digest_algorithm que pide pyhanko y siempre hacia
+  SHA-256 -> riesgo de desajuste silencioso (signedAttrs dirian otro algo y la firma
+  saldria invalida). Ahora valida: si != sha256 lanza NotImplementedError claro
+  ("el miniHSM P-256 solo soporta SHA-256"). SHA-256 sigue siendo lo correcto para P-256.
+Sin cambios de firmware. Verificado en hardware (firma done, SubFilter PAdES).
+PENDIENTE auditoria: a) campo Signature1 fijo (bloquea multifirma), b) location
+default "Peru", d) max(image_opacity,0.9) pisa al cliente en modo left, e) approval
+fuerza FILL_FORMS, f) solo 2 de 3 niveles DocMDP, g) saneo Latin-1, i) ceremonia cert.
+(c) se deja: defaults con branding Xami se mantienen por decision de negocio.

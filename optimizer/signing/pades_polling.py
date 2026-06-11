@@ -11,7 +11,7 @@ import hashlib
 import asyncio
 
 from pyhanko.sign import signers
-from pyhanko.sign.fields import SigFieldSpec, MDPPerm
+from pyhanko.sign.fields import SigFieldSpec, MDPPerm, SigSeedSubFilter
 from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko_certvalidator.registry import SimpleCertificateStore
@@ -32,7 +32,31 @@ from signing import dev_pki
 POLL_INTERVAL = 2
 SIGN_TIMEOUT  = 120
 DEFAULT_STAMP_TEXT = "Firmado digitalmente\npor %(signer)s\n%(ts)s"
-FONT_PATH = "/usr/share/fonts/dejavu/DejaVuSans.ttf"  # Unicode (acentos, guiones, comillas)
+import os as _os
+_FONT_CANDIDATES = [
+    "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",  # metrica de Arial
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",                       # respaldo
+]
+FONT_PATH = next((f for f in _FONT_CANDIDATES if _os.path.exists(f)), _FONT_CANDIDATES[-1])
+
+
+_TXT_MAP = {
+    "—": "-", "–": "-", "‒": "-", "―": "-",
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": '"', "”": '"', "„": '"', "‟": '"',
+    "…": "...", "•": "-", " ": " ", "™": "(TM)", "®": "(R)",
+}
+
+
+def _sanitize_latin1(text):
+    """Aproxima caracteres tipograficos fuera de Latin-1 (guion largo, comillas
+    curvas...) para que la fuente estandar no pase a UTF-16 (BOM + letras
+    espaciadas). Los acentos del espanol estan en Latin-1, se conservan."""
+    if not text:
+        return text
+    for k, v in _TXT_MAP.items():
+        text = text.replace(k, v)
+    return text.encode("latin-1", "replace").decode("latin-1")
 
 
 class PollingSigner(signers.Signer):
@@ -49,6 +73,10 @@ class PollingSigner(signers.Signer):
                              dry_run: bool = False) -> bytes:
         if dry_run:
             return bytes(72)
+        algo = str(digest_algorithm).lower().replace("-", "")
+        if algo != "sha256":
+            raise NotImplementedError(
+                f"el miniHSM (curva P-256) solo soporta SHA-256; se solicito {digest_algorithm}")
         digest = hashlib.sha256(data).hexdigest()
         rid = job_queue.enqueue(self.device_id, digest)
         waited = 0
@@ -84,10 +112,10 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
     imagen(izq)/texto(der) segun image_width; extremos >=98% solo imagen, <=2%
     solo texto. Todos los margenes/dimensiones son ENTEROS (pyhanko usa Fraction)."""
     tb = dict(
-        font=GlyphAccumulatorFactory(FONT_PATH),
         box_layout_rule=SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
-            margins=Margins(left=0, right=0, top=0, bottom=0)))
+            margins=Margins(left=0, right=0, top=0, bottom=0),
+            inner_content_scaling=InnerScaling.SHRINK_TO_FIT))
     if text_opacity is not None and float(text_opacity) < 1.0:
         g = round(1.0 - float(text_opacity), 3)
         tb["text_color"] = (g, g, g)
@@ -119,7 +147,8 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
             inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
         kw["inner_content_layout"] = SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
-            margins=Margins(left=img_w + GAP, right=0, top=0, bottom=0))
+            margins=Margins(left=img_w + GAP, right=0, top=0, bottom=0),
+            inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
     else:
         if bg is not None:
             kw["background_layout"] = SimpleBoxLayoutRule(
@@ -128,7 +157,8 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
                 inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
         kw["inner_content_layout"] = SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
-            margins=Margins(left=0, right=0, top=0, bottom=0))
+            margins=Margins(left=0, right=0, top=0, bottom=0),
+            inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
     return TextStampStyle(**kw)
 
 
@@ -165,6 +195,7 @@ async def sign_pdf_bytes(
         name=(name or f"MiniHSM-{device_id}"),
         reason=reason, location=location, contact_info=contact,
         certify=certify,
+        subfilter=SigSeedSubFilter.PADES,
         docmdp_permissions=MDPPerm.NO_CHANGES if certify else MDPPerm.FILL_FORMS,
     )
 
@@ -175,6 +206,7 @@ async def sign_pdf_bytes(
             from PIL import Image
             bg = PdfImage(Image.open(io.BytesIO(stamp_image_bytes)))
         text = stamp_text if stamp_text is not None else DEFAULT_STAMP_TEXT
+        text = _sanitize_latin1(text)
         stamp_style = _build_stamp_style(
             text, bg, image_opacity, image_mode, box,
             text_opacity=text_opacity, border=border, border_width=border_width,
