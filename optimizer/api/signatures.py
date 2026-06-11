@@ -64,7 +64,7 @@ async def sign_pdf(
     stamp_source:  str = Form("attributes"),  # attributes | default | custom
     image_opacity: float = Form(0.5),
     text_opacity:  float = Form(1.0),
-    image_mode:    str = Form("background"),   # background | left
+    image_mode:    str = Form("left"),        # left (default) | background
     image_width:   str = Form(None),           # '40%' o '120' (pts) - solo modo left
     border:        bool = Form(True),
     border_width:  int = Form(2),

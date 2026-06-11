@@ -1433,3 +1433,19 @@ Modo claro/oscuro con toggle (persistido en localStorage). Acordeon "cURL equiva
 que se arma en vivo segun el formulario, con resaltado y botones Copiar / Descargar .sh.
 Responsive: <920px apila columnas. Copia versionada en optimizer/web/firmar.html;
 backup de la version vertical en public_html/firmar/index_backup_vertical.html.
+
+### BLOQUE 8 F2: 3 fixes de apariencia del sello visible (2026-06-11)
+1) PADDING: el sello tenia padding interno (margenes por defecto + box_layout_rule
+   de la caja de texto de pyhanko, 10pt). Ahora margenes 0 en todos los layouts y
+   box_layout_rule con margen 0 -> contenido pegado, sin marco con aire.
+2) IMAGEN DEFORMADA: la causa era pasar margenes FLOAT (pyhanko usa Fraction y
+   rompia el calculo). Ahora todos los margenes/dim son ENTEROS + SHRINK_TO_FIT
+   -> la imagen toma el ancho pedido y la altura sale proporcional (aspecto OK).
+3) CARACTERES RAROS: NO eran acentos. Con un caracter fuera de Latin-1 (guion largo
+   "—", comillas tipograficas) pyhanko pasaba TODO el texto a UTF-16 con BOM y la
+   fuente simple dibujaba el BOM ("þÿ") + bytes nulos (letras espaciadas). Fix:
+   fuente DejaVuSans INCRUSTADA (GlyphAccumulatorFactory) -> texto por indices de
+   glifo, Unicode completo, con ActualText. Requiere uharfbuzz (pyHanko[opentype]).
+Validado en hardware (70% izq + acentos + em-dash): imagen 280x112 aspecto 2.5,
+texto por glifos sin BOM, sin padding. Muestra: descargas/sello_70_nuevo.png
+PENDIENTE: control de fondo de opacidad detras del texto (caja semiopaca).

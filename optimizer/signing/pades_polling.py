@@ -20,6 +20,7 @@ from pyhanko.pdf_utils.images import PdfImage
 from pyhanko.pdf_utils.text import TextBoxStyle
 from pyhanko.pdf_utils.layout import (
     SimpleBoxLayoutRule, AxisAlignment, Margins, InnerScaling)
+from pyhanko.pdf_utils.font.opentype import GlyphAccumulatorFactory
 try:
     from pyhanko.sign.timestamps import HTTPTimeStamper
 except ImportError:
@@ -31,6 +32,7 @@ from signing import dev_pki
 POLL_INTERVAL = 2
 SIGN_TIMEOUT  = 120
 DEFAULT_STAMP_TEXT = "Firmado digitalmente\npor %(signer)s\n%(ts)s"
+FONT_PATH = "/usr/share/fonts/dejavu/DejaVuSans.ttf"  # Unicode (acentos, guiones, comillas)
 
 
 class PollingSigner(signers.Signer):
@@ -61,47 +63,72 @@ class PollingSigner(signers.Signer):
         raise TimeoutError("el device no firmo dentro del tiempo limite")
 
 
-def _resolve_img_width(spec, w_box, default_frac=0.40):
-    """Ancho de la imagen en modo 'left'. spec: None -> 40% del box; "NN%" ->
-    fraccion del box; "NN" o "NNpx" -> NN puntos PDF. Se acota a [10%, 90%]."""
-    if spec is None or str(spec).strip() == "":
+def _resolve_img_width(image_width, w_box, default_frac=0.40):
+    """Ancho de la imagen en PUNTOS (0..w_box) en modo 'left'. Acepta "NN%"
+    (fraccion del box) o "NN"/"NNpx" (puntos). Sin clamp a 10/90: 0 y w_box son
+    validos para los casos extremos (solo texto / solo imagen)."""
+    if image_width is None or str(image_width).strip() == "":
         return default_frac * w_box
-    raw = str(spec).strip().lower().replace("px", "").replace(" ", "")
+    raw = str(image_width).strip().lower().replace("px", "").replace(" ", "")
     try:
-        if raw.endswith("%"):
-            w = (float(raw[:-1]) / 100.0) * w_box
-        else:
-            w = float(raw)
+        w = (float(raw[:-1]) / 100.0) * w_box if raw.endswith("%") else float(raw)
     except ValueError:
         return default_frac * w_box
-    return max(0.10 * w_box, min(w, 0.90 * w_box))
+    return max(0.0, min(w, w_box))
 
 
 def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
                        text_opacity=1.0, border=True, border_width=3, image_width=None):
-    """Arma el TextStampStyle. image_mode: 'background' (fondo) | 'left' (imagen
-    a la izquierda, texto a la derecha). text_opacity<1 atenua el texto via color
-    (pyhanko no soporta alpha real en texto). border/border_width: marco de toda
-    la firma (imagen + texto)."""
-    tb = {}
+    """TextStampStyle SIN padding interno (margenes 0) y con la imagen escalada
+    preservando su proporcion (SHRINK_TO_FIT). image_mode 'left' reparte
+    imagen(izq)/texto(der) segun image_width; extremos >=98% solo imagen, <=2%
+    solo texto. Todos los margenes/dimensiones son ENTEROS (pyhanko usa Fraction)."""
+    tb = dict(
+        font=GlyphAccumulatorFactory(FONT_PATH),
+        box_layout_rule=SimpleBoxLayoutRule(
+            x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
+            margins=Margins(left=0, right=0, top=0, bottom=0)))
     if text_opacity is not None and float(text_opacity) < 1.0:
         g = round(1.0 - float(text_opacity), 3)
         tb["text_color"] = (g, g, g)
-    text_box_style = TextBoxStyle(**tb) if tb else TextBoxStyle()
-    kw = dict(stamp_text=stamp_text, background=bg, background_opacity=image_opacity,
-              text_box_style=text_box_style,
+    text_box_style = TextBoxStyle(**tb)
+
+    w_box = int(abs(box[2] - box[0])) if box else 0
+
+    side_by_side = bool(bg is not None and image_mode == "left" and box)
+    img_w = 0
+    if side_by_side:
+        img_w = int(round(_resolve_img_width(image_width, w_box)))
+        if img_w >= int(0.98 * w_box):       # solo imagen
+            stamp_text = ""
+            side_by_side = False
+        elif img_w <= int(0.02 * w_box):     # solo texto
+            bg = None
+            side_by_side = False
+
+    kw = dict(stamp_text=stamp_text, background=bg,
+              background_opacity=image_opacity, text_box_style=text_box_style,
               border_width=(int(border_width) if border else 0))
-    if bg is not None and image_mode == "left" and box:
-        w_box = abs(box[2] - box[0])
-        img_w = _resolve_img_width(image_width, w_box)
+
+    GAP = 8
+    if side_by_side:
         kw["background_opacity"] = max(image_opacity, 0.9)
         kw["background_layout"] = SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
-            margins=Margins(left=4, right=w_box - img_w, top=4, bottom=4),
+            margins=Margins(left=0, right=max(0, w_box - img_w), top=0, bottom=0),
             inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
         kw["inner_content_layout"] = SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
-            margins=Margins(left=img_w + 10, right=4, top=4, bottom=4))
+            margins=Margins(left=img_w + GAP, right=0, top=0, bottom=0))
+    else:
+        if bg is not None:
+            kw["background_layout"] = SimpleBoxLayoutRule(
+                x_align=AxisAlignment.ALIGN_MID, y_align=AxisAlignment.ALIGN_MID,
+                margins=Margins(left=0, right=0, top=0, bottom=0),
+                inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
+        kw["inner_content_layout"] = SimpleBoxLayoutRule(
+            x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
+            margins=Margins(left=0, right=0, top=0, bottom=0))
     return TextStampStyle(**kw)
 
 
@@ -120,7 +147,7 @@ async def sign_pdf_bytes(
     stamp_text: str | None = None,
     image_opacity: float = 0.5,
     text_opacity: float = 1.0,
-    image_mode: str = "background",      # background | left
+    image_mode: str = "left",            # left (default) | background
     image_width=None,                    # ancho img en modo left: '40%' o '120' (pts)
     border: bool = True,
     border_width: int = 3,

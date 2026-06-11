@@ -21,3 +21,4 @@ requests>=2.31.0
 
 # Utilidades
 python-dotenv>=1.0.0
+uharfbuzz  # incrustacion de fuente TTF (sello PAdES Unicode)
