@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -208,7 +209,7 @@ static esp_err_t do_heartbeat(void)
             if (cJSON_IsNumber(np) && np->valuedouble > 0) {
                 uint32_t v = (uint32_t)np->valuedouble;
                 if (v != s_interval_sec) {
-                    ESP_LOGI(TAG, "nextPollSeconds: %u -> %u", s_interval_sec, v);
+                    ESP_LOGI(TAG, "nextPollSeconds: %" PRIu32 " -> %" PRIu32, s_interval_sec, v);
                     s_interval_sec = v;
                 }
             }
