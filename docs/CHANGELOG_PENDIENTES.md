@@ -1063,3 +1063,9 @@ pubkey" se usa ECIES: ECDH efimero + clave simetrica derivada + AES-GCM. Estanda
   en el arranque, reciba el blob, lo descifre con match_ecies_decrypt, guarde el secret).
 - PENDIENTE: que el server /devices/match GENERE el secret y lo devuelva cifrado (hoy
   Capa 1 solo verifica identidad; falta sumar ecies_encrypt del secret en la respuesta).
+
+### Nota tecnica: funciones mbedTLS en ESP-IDF
+mbedtls_hkdf y similares NO se compilan por defecto. Al usar una funcion mbedTLS
+nueva hay que habilitar su CONFIG_MBEDTLS_*_C en sdkconfig.defaults o da
+"undefined reference" en el LINK (no en compilacion). El match necesito
+CONFIG_MBEDTLS_HKDF_C=y. ECDH/ECP/GCM/MD ya venian por defecto.
