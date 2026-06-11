@@ -1200,3 +1200,88 @@ Device de prueba: fe4dfede3b10c54b (ya emparejado, secret en NVS/server).
   CONECTAR directo al device — imposible con NAT (Bloque 10). Fix: /health ahora
   reporta optimizer + devices desde el registro de heartbeats (online/segundos),
   sin conexion directa. Responde en ~80ms. Aplicado con restart del service.
+
+## BLOQUE 5+10 UNIFICADO — Autorizacion con AUTORIDAD EN EL MINI (diseño 2026-06-11)
+
+> Cierra el modelo de autorizacion + transporte tras analisis largo. REEMPLAZA el
+> modelo previo donde el KMaster vivia en el server. PENDIENTE de implementar.
+
+### Inversion clave
+En polling el MINI inicia (pide su cola), asi que el mini es la AUTORIDAD: tiene la
+clave privada (firma) y ademas su propio KMaster (autoriza). El mini autoriza al
+server a entregarle la cola; el SERVER debe poder DEMOSTRAR que el mini lo autorizo
+(no al reves). Antes lo teniamos al reves (KMaster en el server) = incorrecto.
+
+### Claves y donde viven
+- Mini: clave privada EC (identidad/firma; NVS; PERSISTENTE) + su propio KMaster
+  (256 bits; ROTADO en cada arranque; de sesion).
+- Server (por device): C = VaultStamping_encrypt(S, KMaster_mini) — el "codigo
+  cifrado" que el mini le entrega. El server NUNCA guarda S ni el KMaster.
+
+### VaultStamping (multiplicativo, de vaultStamping.js)
+- KMaster = (K_base, p), p primo. KUser = (K_user_inv, R), R aleatorio por operacion,
+  K_user_inv = (K_base*R)^-1 mod p. UNICO por operacion.
+- encrypt: C = (S*K_base) mod p.   decrypt: S = (C*K_user_inv*R) mod p.
+- Da DEMOSTRABILIDAD, no fortaleza (la fortaleza la pone el HMAC). 256 bits, S<p.
+- OJO seguridad: quien tiene C y S puede derivar K_base = C*S^-1 mod p. Por eso el
+  server NUNCA persiste S (lo recupera en memoria por op y lo olvida).
+
+### Match (una vez) + ROTACION por arranque
+- Mini genera KMaster, elige S, calcula C. Match: server->mini entrega secretos
+  (HMAC etc., ECIES como ya esta); mini->server entrega C.
+- En CADA arranque el mini ROTA KMaster (primo 256 nuevo -> nuevo S -> nuevo C1) y en
+  el aviso OBLIGATORIO de "me resetee" (que el panel de xami.run muestra al usuario)
+  manda {C1, firma_EC(C1)}. El server verifica la firma EC (proof of possession),
+  acepta C1 (nueva EPOCA) y DESCARTA el set de kusers de la epoca anterior. El mini
+  usa el KMaster nuevo SOLO tras la confirmacion del server (orden atomico).
+- Firmar el aviso con la EC: autentica C1 + impide spoof de reset (anti-DoS rotacion).
+
+### Peticion de cola (cada poll) — pseudocodigo canonico
+MINI arma:
+  kuser, ts_kuser = derive_kuser(KMaster)          # R aleatorio
+  ts, nonce = now(), random()
+  msg  = "minihsm:"+ts+":"+nonce+":"+kuser+":"+ts_kuser    # ORDEN FIJO canonico
+  hmac = HMAC_SHA256(key=S, data=msg)
+  envia { kuser, ts, ts_kuser, nonce, hmac }
+
+SERVER valida (en orden):
+  if hash(kuser) in used_kusers[epoch]: reject     # 1. anti-replay (set por epoca)
+  if not within_window(ts, ts_kuser): reject       # 2. frescura
+  S' = vaultstamping_decrypt(C, kuser)             # 3. recupera S en memoria
+  if HMAC_SHA256(S', msg) != hmac: reject          # 4. candado (valida kuser+integridad)
+  used_kusers[epoch].add(hash(kuser))              # 5. registra
+  entrega cola cifrada con ECIES(pubkey_mini)      # 6. solo el mini la abre
+  forget(S')                                       # 7. olvida S
+
+### Propiedades
+- Doble candado: el kuser destraba S, y S verifica el HMAC. kuser falso -> S malo ->
+  HMAC falla. Un solo HMAC protege kuser+timestamps+integridad (todo dentro del HMAC).
+- Anti-replay en el SERVER (tiene disco), por EPOCA; se AUTO-PODA en cada rotacion
+  (los kusers viejos mueren contra el C nuevo -> descifran a basura -> HMAC falla).
+  El mini queda SIN estado de kusers (solo los genera). Adios particion NVS 320KB.
+- Confidencialidad de la cola por ECIES -> solo el mini la abre (tapa al impostor que
+  pollea con el deviceId; TLS no autentica al que pollea).
+- TLS encima: canal + defensa DNS (el mini valida cert con esp_crt_bundle).
+- Forward secrecy en la capa de autorizacion (KMaster efimero por sesion).
+
+### Modelo de amenaza asumido
+Server honesto-pero-curioso; la soberania del mini es contra atacantes EXTERNOS.
+El server, al recuperar S en memoria + tener C, PODRIA derivar K_base de la EPOCA
+actual — pero NO puede forjar FIRMAS (clave EC en el chip), y la rotacion acota
+cualquier derivacion a una sesion. Blindaje total (server cripto-incapaz de forjar
+autorizaciones) = el mini firmaria el poll con la EC, sin S compartido. Capa futura.
+
+### zkSNARK (capa POSTERIOR, server-side)
+Prueba Groth16 (snarkjs, vaultStamping.js) de que un kuser valido descifra C a S
+(commitment Poseidon), verificable independientemente / on-chain, SIN revelar
+KUser/KMaster. Es el no-repudio portable ("plus de Xami"). NO bloquea la firma; se
+agrega despues. Reimplementar/portar: el multiplicativo a Python (trivial); el prover
+zk como sidecar Node o equivalente Python.
+
+### Reparto de implementacion
+- SERVER (Python): VaultStamping multiplicativo, validacion del poll (5 pasos),
+  anti-replay por epoca, rotacion EC-firmada (aviso de reset), entrega ECIES de la
+  cola. (zkSNARK: sidecar/después.)
+- FIRMWARE (C): gen KMaster (mbedtls_mpi_gen_prime 256), derive_kuser (MPI),
+  aviso de reset EC-firmado con C1, HMAC con S, ECIES-decrypt de la cola (ya existe
+  del match), vault_sign (ya existe). Adios anti-replay en RAM/NVS del device.
