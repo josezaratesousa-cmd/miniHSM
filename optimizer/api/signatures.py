@@ -61,9 +61,11 @@ async def sign_pdf(
     page:          int = Form(1),           # 1-indexed para el usuario
     box:           str = Form(None),        # "x1,y1,x2,y2"
     stamp_text:    str = Form(None),
-    stamp_source:  str = Form("custom"),    # custom = texto libre | attributes = usa los atributos
+    stamp_source:  str = Form("attributes"),  # attributes | default | custom
     image_opacity: float = Form(0.5),
-    mode:          str = Form("approval"),  # approval | certify
+    image_mode:    str = Form("background"),   # background | left
+    tsa_url:       str = Form(None),           # RFC 3161 -> PAdES-T
+    mode:          str = Form("approval"),     # approval | certify
     stamp_image:   UploadFile = File(None),
 ):
     pdf_bytes = await file.read()
@@ -80,23 +82,29 @@ async def sign_pdf(
 
     img_bytes = await stamp_image.read() if stamp_image is not None else None
 
-    # Contenido del sello visible: "attributes" reutiliza los atributos del
-    # diccionario; "custom" usa el texto libre (stamp_text). Asi el usuario elige
-    # si las lineas son iguales a los campos del diccionario o distintas.
-    if visible and (stamp_source or "custom").lower() == "attributes":
-        _l = [f"Firmado por: {name}" if name else "Firmado por: %(signer)s"]
-        if reason:   _l.append(f"Razón: {reason}")
-        if location: _l.append(f"Lugar: {location}")
-        if contact:  _l.append(f"Contacto: {contact}")
-        _l.append("Fecha: %(ts)s")
-        stamp_text = "\n".join(_l)
+    # Contenido del sello visible (3 modos):
+    #   attributes -> arma las lineas con los atributos del diccionario + fecha
+    #   default    -> sello estandar del motor (firmante + fecha), generico
+    #   custom     -> texto libre (stamp_text)
+    if visible:
+        src = (stamp_source or "default").lower()
+        if src == "attributes":
+            _l = [f"Firmado por: {name}" if name else "Firmado por: %(signer)s"]
+            if reason:   _l.append(f"Razón: {reason}")
+            if location: _l.append(f"Lugar: {location}")
+            if contact:  _l.append(f"Contacto: {contact}")
+            _l.append("Fecha: %(ts)s")
+            stamp_text = "\n".join(_l)
+        elif src == "default":
+            stamp_text = None   # el motor usa su texto estandar
 
     dev = _resolve_device(device_id)
     kwargs = dict(
         name=name, reason=reason, location=location, contact=contact,
         visible=visible, page=max(0, page - 1), box=box_tuple,
         stamp_image_bytes=img_bytes, stamp_text=stamp_text,
-        image_opacity=image_opacity, certify=(mode == "certify"),
+        image_opacity=image_opacity, image_mode=image_mode,
+        certify=(mode == "certify"), tsa_url=tsa_url,
     )
     pid = pdf_jobs.create(file.filename or "documento.pdf")
     asyncio.create_task(_run(pid, pdf_bytes, dev, kwargs))

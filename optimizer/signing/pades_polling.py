@@ -1,14 +1,10 @@
 """Firma PAdES con el miniHSM via la cola de polling (Bloque 8 Forma 2).
 
-El server NO alcanza al device (NAT). async_sign_raw encola el digest en
-job_queue y espera (async) a que el device lo recoja en su heartbeat y devuelva
-la firma. Usa asyncio.sleep para no bloquear el event loop -> mientras esperamos,
-el heartbeat del device entra y deposita el resultado en la misma cola.
+async_sign_raw encola el digest en job_queue y espera (async) a que el device lo
+recoja en su heartbeat y devuelva la firma (asyncio.sleep, no bloquea el loop).
 
-Soporta:
-  - firma INVISIBLE (default) o VISIBLE (sello con imagen/texto en pagina+box)
-  - modo APPROVAL (default, se pueden agregar mas firmas) o CERTIFY (sella el
-    documento: DocMDP NO_CHANGES, no se permite firmar/alterar mas)
+Soporta: firma invisible/visible, sello (texto + imagen como fondo o a la
+izquierda), modo approval/certify (DocMDP) y sellado de tiempo TSA (RFC 3161).
 """
 import io
 import hashlib
@@ -21,12 +17,19 @@ from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from pyhanko.stamp import TextStampStyle
 from pyhanko.pdf_utils.images import PdfImage
+from pyhanko.pdf_utils.layout import (
+    SimpleBoxLayoutRule, AxisAlignment, Margins, InnerScaling)
+try:
+    from pyhanko.sign.timestamps import HTTPTimeStamper
+except ImportError:
+    from pyhanko.sign.timestamps.requests_client import HTTPTimeStamper
 
 from minihsm import job_queue
 from signing import dev_pki
 
-POLL_INTERVAL = 2     # segundos entre consultas a la cola
-SIGN_TIMEOUT  = 120   # segundos maximos esperando al device
+POLL_INTERVAL = 2
+SIGN_TIMEOUT  = 120
+DEFAULT_STAMP_TEXT = "Firmado digitalmente\npor %(signer)s\n%(ts)s"
 
 
 class PollingSigner(signers.Signer):
@@ -57,6 +60,24 @@ class PollingSigner(signers.Signer):
         raise TimeoutError("el device no firmo dentro del tiempo limite")
 
 
+def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box):
+    """Arma el TextStampStyle. image_mode: 'background' (fondo) | 'left' (imagen
+    a la izquierda, texto a la derecha)."""
+    kw = dict(stamp_text=stamp_text, background=bg, background_opacity=image_opacity)
+    if bg is not None and image_mode == "left" and box:
+        w_box = abs(box[2] - box[0])
+        img_w = 0.40 * w_box
+        kw["background_opacity"] = max(image_opacity, 0.9)
+        kw["background_layout"] = SimpleBoxLayoutRule(
+            x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
+            margins=Margins(left=4, right=w_box - img_w, top=4, bottom=4),
+            inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
+        kw["inner_content_layout"] = SimpleBoxLayoutRule(
+            x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
+            margins=Margins(left=img_w + 10, right=4, top=4, bottom=4))
+    return TextStampStyle(**kw)
+
+
 async def sign_pdf_bytes(
     pdf_bytes: bytes,
     device_id: str,
@@ -66,28 +87,25 @@ async def sign_pdf_bytes(
     location: str = "Peru",
     contact: str | None = None,
     visible: bool = False,
-    page: int = 0,                       # 0-indexed
-    box=None,                            # (x1, y1, x2, y2) en puntos PDF
+    page: int = 0,
+    box=None,
     stamp_image_bytes: bytes | None = None,
     stamp_text: str | None = None,
     image_opacity: float = 0.5,
+    image_mode: str = "background",      # background | left
     certify: bool = False,
+    tsa_url: str | None = None,          # RFC 3161 -> PAdES-T
 ) -> bytes:
-    """Firma un PDF (bytes) con PAdES usando el device. Devuelve bytes firmados."""
     signer = PollingSigner(device_id)
     w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes), strict=False)
 
-    if visible:
-        field_spec = SigFieldSpec("Signature1", on_page=page, box=box)
-    else:
-        field_spec = SigFieldSpec("Signature1")
+    field_spec = (SigFieldSpec("Signature1", on_page=page, box=box)
+                  if visible else SigFieldSpec("Signature1"))
 
     meta = PdfSignatureMetadata(
         field_name="Signature1",
-        name=(name or f"MiniHSM-{device_id}"),   # atributo /Name (firmante declarado)
-        reason=reason,                            # atributo /Reason
-        location=location,                        # atributo /Location
-        contact_info=contact,                     # atributo /ContactInfo
+        name=(name or f"MiniHSM-{device_id}"),
+        reason=reason, location=location, contact_info=contact,
         certify=certify,
         docmdp_permissions=MDPPerm.NO_CHANGES if certify else MDPPerm.FILL_FORMS,
     )
@@ -98,15 +116,13 @@ async def sign_pdf_bytes(
         if stamp_image_bytes:
             from PIL import Image
             bg = PdfImage(Image.open(io.BytesIO(stamp_image_bytes)))
-        default_text = "Firmado digitalmente\npor %(signer)s\n%(ts)s"
-        stamp_style = TextStampStyle(
-            stamp_text=(default_text if stamp_text is None else stamp_text),
-            background=bg,
-            background_opacity=image_opacity,
-        )
+        text = stamp_text if stamp_text is not None else DEFAULT_STAMP_TEXT
+        stamp_style = _build_stamp_style(text, bg, image_opacity, image_mode, box)
 
+    timestamper = HTTPTimeStamper(tsa_url) if tsa_url else None
     pdf_signer = signers.PdfSigner(
-        meta, signer=signer, stamp_style=stamp_style, new_field_spec=field_spec)
+        meta, signer=signer, stamp_style=stamp_style,
+        new_field_spec=field_spec, timestamper=timestamper)
     out = io.BytesIO()
     await pdf_signer.async_sign_pdf(w, output=out)
     return out.getvalue()

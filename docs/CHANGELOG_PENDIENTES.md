@@ -1392,3 +1392,18 @@ contiene los textos de los atributos (Maria Lopez Tello, Conformidad, Cusco,
 entidad, Contacto, Fecha). 5 lineas confirmadas.
 Web /firmar: selector "Contenido del sello" (Usar atributos | Texto personalizado),
 el ejemplo del textarea ahora es de 5 lineas.
+
+### BLOQUE 8 F2: 4 fixes UX/firma (2026-06-11)
+Fix1 - Sello con 3 modos (param stamp_source): attributes (usa los 4 atributos),
+       default (estandar del motor: firmante+fecha), custom (texto libre).
+Fix2 - TSA / sellado de tiempo RFC 3161 (param tsa_url). Usa pyhanko HTTPTimeStamper
+       pasado a PdfSigner(timestamper=). Validado contra freetsa.org -> el PDF queda
+       con unsigned attr 'signature_time_stamp_token' (PAdES-T). Vacio = sin TSA.
+Fix3 - Web /firmar: +2px en toda la tipografia (base 15->17px) por legibilidad.
+Fix4 - Disposicion de imagen del sello (param image_mode): 'background' (fondo, con
+       image_opacity) o 'left' (imagen a la izquierda + texto a la derecha; se calcula
+       el reparto del box ~40/60 con SimpleBoxLayoutRule + Margins). Param image_opacity
+       expuesto en la web como slider.
+Validado en hardware (00da0f3b57ec8f14): image_mode=left OK, TSA OK (PAdES-T).
+Copia versionada de la web en optimizer/web/firmar.html (la activa vive en
+public_html/firmar/index.html, fuera del repo).
