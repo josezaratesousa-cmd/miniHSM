@@ -1081,3 +1081,26 @@ Cadena de fixes que tomo llegar aqui:
 4. lectura HTTP con open/write/read (perform consumia el stream)
 5. RNG en mbedtls_ecdh_compute_shared (NULL daba ECP_BAD_INPUT_DATA -20352)
 Ambos lados comparten el mismo HMAC secret. Fase 1 (nucleo) lista.
+
+## BLOQUE 10 — Conectividad server->device (polling de trabajos)
+
+Problema: el server (api.xami.run) NO puede iniciar conexion HACIA el device:
+esta detras del NAT del router del cliente. El server solo ve la IP publica del
+router (ej 190.238.103.77), que no reenvia al device privado (192.168.x).
+Probado: curl a la IP publica da timeout (NAT bloquea entrada).
+
+DECISION: modelo POLLING (como el correo). El device pregunta por trabajos; el
+server nunca inicia conexion. Ventajas: cero infra extra, cero problema de NAT,
+escala sin esfuerzo, robusto ante reinicios. El heartbeat YA es un polling.
+
+Flujo:
+1. Device hace poll: GET /devices/{id}/jobs (cada ~20-30s o junto al heartbeat)
+2. Server responde: vacio, o { requestId, digest, kuser(token), ts, nonce }
+3. Device valida token (HMAC del match) y firma el digest -> POST resultado
+4. Usuario sube doc en xami.run (logueado) -> server encola trabajo para ese device
+5. Aceleracion (idea usuario): si esta apurado, JS de la web pide refresh inmediato
+   (como el boton Actualizar del correo).
+
+Descartado por ahora: WebSocket directo (N conexiones, no escala) y MQTT con
+broker (infra extra). Polling = lo mas simple que resuelve el problema real.
+SERA LO PRIMERO A IMPLEMENTAR para probar la firma end-to-end.
