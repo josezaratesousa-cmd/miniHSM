@@ -1,0 +1,30 @@
+# Pedidos al API (optimizador) desde Console
+
+> Cosas que console NECESITA del optimizador/firmware pero que NO toca (las hace
+> el otro asistente). console solo consume el api como guardián.
+> Estado: lista viva. Fecha: 2026-06-11.
+
+## P1. Cola persistente (no en RAM)
+La cola de trabajos (`job_queue._JOBS`) vive en memoria (dict por device_id).
+Implicaciones: se pierde si el optimizador reinicia, y obliga a --workers 1 (DT7).
+PEDIDO: persistir la cola (BD/disco) para sobrevivir reinicios y permitir varios
+workers. Mientras tanto, la VERDAD persistente de los pendientes vive en xami_db
+(sign_requests); console no depende de la cola en RAM para el estado.
+
+## P2. Respetar device "inhabilitado" al encolar (DT3)
+Hoy POST /devices/{id}/jobs encola sin verificar si el device está bloqueado.
+PEDIDO: que el encolado (y/o el heartbeat) respete el estado inhabilitado y
+responda "inhabilitado", para que console pueda apoyarse en esa barrera.
+
+## P3. Frontera del guardián (DT9)
+Hoy cualquiera que alcance el optimizador puede encolar. console valida permisos
+en su BD, pero el optimizador no exige que la llamada venga SOLO de console.
+PEDIDO: definir cómo asegurar que el optimizador solo acepte llamadas de console
+(red interna, token de servicio, etc.).
+
+## Notas de integración (lo que console SÍ usará, sin cambios al api)
+- Firmar PDF completo: POST /v1/signatures/pdf (recibe PDF + prefs, orquesta el
+  polling con el device internamente y devuelve el PDF firmado). Es el endpoint
+  correcto para el flujo de firma del panel (NO el de jobs crudo).
+- Estado de un trabajo de PDF: GET /v1/signatures/pdf/{pid} y /pdf/{pid}/download.
+- Estado de devices: GET /devices/ y /devices/{id}.
