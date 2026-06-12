@@ -477,6 +477,22 @@ static esp_err_t handler_provision_wifi(httpd_req_t *req);
 static esp_err_t handler_provision_wifi_clear(httpd_req_t *req);
 static esp_err_t handler_provision_reconfigure(httpd_req_t *req);
 
+/* Fase 4b: cargador minimo de la UI de custodia. Sirve una pagina http (mismo origen que
+   el chip) que arranca app.js desde xami.run. Asi la pagina puede hablar con el chip (http)
+   y con la API (https) sin chocar con mixed-content. */
+static esp_err_t handler_custodia(httpd_req_t *req)
+{
+    static const char *page =
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>Custodia Xami</title></head><body>"
+        "<script src=\"https://xami.run/custodia/app.js\"></script>"
+        "</body></html>";
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr(req, page);
+    return ESP_OK;
+}
+
 /* Fase 4b: ceremonia de custodia. Recibe el blob ECIES (binario) del navegador en la
    LAN, lo procesa (descifra -> verifica secreto -> custody_add) y responde el otpauth. */
 static esp_err_t handler_ceremony(httpd_req_t *req)
@@ -527,6 +543,7 @@ esp_err_t network_http_server_start(void)
         { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
         { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
         { .uri = "/provision/reconfigure", .method = HTTP_POST, .handler = handler_provision_reconfigure },
+        { .uri = "/custodia", .method = HTTP_GET,  .handler = handler_custodia },
         { .uri = "/ceremony", .method = HTTP_POST, .handler = handler_ceremony },
     };
 

@@ -1601,3 +1601,19 @@ cert cifrados (ECIES). Elimina la Fase 4c firmware.
 - ceremony.c validado con gcc -Wall -fsyntax-only (headers stub). Compilacion real = CI.
 - PENDIENTE: IP del chip al navegador (hoy manual: 192.168.1.41; luego mDNS o IP en heartbeat).
   UI: starter online + pagina offline (fingerprint compare + forge.js + WebCrypto ECIES + QR).
+
+### CUSTODIA Fase 4a/4b (UI · Via A LAN) — 2026-06-12
+ARQUITECTURA: una pagina https (xami.run) NO puede hablar con el chip http (mixed-content).
+Solucion: el chip sirve la pagina (origen http) y arranca app.js DESDE xami.run (un origen http
+si puede cargar un script https). Asi la logica vive en xami.run y la pagina habla con el chip
+(mismo origen) y con la API (https). Deuda tecnica B: version offline/AP (assets embebidos).
+- Firmware: handler GET /custodia (network_engine.c) -> pagina minima que carga
+  https://xami.run/custodia/app.js. Push de firmware (build CI).
+- Server: CORS allow_origin_regex para origenes LAN privados http (192.168/10/172.16-31).
+- Web: /home/xami/public_html/custodia/app.js (live) + copia versionada optimizer/web/custodia/app.js.
+  app.js: ECIES en WebCrypto (replica exacta de crypto_match.ecies_encrypt: ECDH P-256 ->
+  HKDF-SHA256 salt=32x00 info="xami-match-v1" -> AES-256-GCM, blob eph65+iv12+ct+tag16);
+  abre el .p12 con forge (la pass del .p12 no sale del navegador) y saca el escalar P-256 via
+  WebCrypto (pkcs8->jwk.d); compara fingerprint chip-local vs xami.run (anti-impostor);
+  POST /ceremony con reintento (espera el heartbeat que arma la ceremonia); muestra QR otpauth.
+  Validado con node --check. PENDIENTE: probar forge con .p12 EC real en navegador.
