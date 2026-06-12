@@ -410,8 +410,8 @@ function editorHTML(d){
           <div class="gear-title"><span>${svg("settings",14)} Ajustar el sello</span><button type="button" class="gear-close" onclick="toggleGear()" aria-label="Cerrar">${svg("x",14)}</button></div>
           <div class="rng"><label>Ancho</label><input type="range" id="ed-w" min="120" max="520" value="${p.stamp_w||400}"><span id="ed-wv">${p.stamp_w||400}</span></div>
           <div class="rng"><label>Alto</label><input type="range" id="ed-h" min="60" max="300" value="${p.stamp_h||120}"><span id="ed-hv">${p.stamp_h||120}</span></div>
-          <div class="rng"><label>Tamaño img</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
-          <div class="rng"><label>Opacidad fondo</label><input type="range" id="ed-bopa" min="0" max="100" value="${Math.round((p.bg_opacity??0)*100)}"><span id="ed-bopav">${Math.round((p.bg_opacity??0)*100)}%</span></div>
+          <div class="rng"><label>Tam. imagen</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
+          <div class="rng"><label>Op. fondo</label><input type="range" id="ed-bopa" min="0" max="100" value="${Math.round((p.bg_opacity??0)*100)}"><span id="ed-bopav">${Math.round((p.bg_opacity??0)*100)}%</span></div>
           <div class="gear-row"><span class="gr-label">Disposición</span><select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select></div>
           <div class="gear-row"><label class="gr-check"><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
             <span id="ed-bwrow" style="${p.border?'':'display:none'};display:inline-flex;align-items:center;gap:5px"><input type="number" id="ed-bw" min="0" max="10" value="${p.border_width||2}" style="width:50px"><span class="muted2">px</span></span>

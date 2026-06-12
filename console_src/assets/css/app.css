@@ -286,7 +286,7 @@ button svg{vertical-align:-3px}
 .gear-pop .gear-title{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:10px}
 .gear-close{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px;display:flex}
 .gear-close:hover{color:var(--bad)}
-.gear-pop .rng{display:grid;grid-template-columns:72px 1fr 34px;align-items:center;gap:8px;margin-bottom:9px;font-size:11px;color:var(--muted)}
+.gear-pop .rng{display:grid;grid-template-columns:80px 1fr 36px;align-items:center;gap:8px;margin-bottom:9px;font-size:11px;color:var(--muted)}
 .gear-pop .rng label{min-width:0;white-space:nowrap}
 .gear-pop .rng input[type=range]{width:100%;min-width:0}
 .gear-pop .rng span{text-align:right;font-size:11px;color:var(--ink)}
@@ -314,3 +314,6 @@ button svg{vertical-align:-3px}
 .ed-right .sheet-lines span:nth-child(5){width:72%}
 .ed-right .sheet-lines span:nth-child(6){width:85%}
 .ed-right .sheet-lines span:nth-child(7){width:60%}
+
+/* FIX label opacidad que se desbordaba sobre la barra */
+.gear-pop .rng label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
