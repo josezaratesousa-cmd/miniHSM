@@ -1563,3 +1563,11 @@ Base para el chip de custodia (ver DISENO_CUSTODIA_P12.md / PLAN_CUSTODIA_FASES.
   time(NULL) (NTP) y llama custody_sign con el codigo. <time.h> incluido.
 - Verificado: custody_manager.c gcc -Wall -fsyntax-only sin errores. Pendiente Fase 4: endpoint
   local de ceremonia que use custody_add y muestre el QR (cc_totp_uri).
+
+### FIX build — tabla de particiones (2026-06-12)
+El binario supero 1MB al anadir el custody (Fase 3): factory por defecto = 0x100000, binario
+0x100400 (overflow 0x400). La build no usaba partitions.csv (factory 0x1A0000=1.6MB). Activado
+en sdkconfig.defaults: CONFIG_PARTITION_TABLE_CUSTOM + CUSTOM_FILENAME="partitions.csv".
+partitions.csv mantiene nvs en 0x9000/0x6000 -> identidad del device intacta al reflashear.
+Nota: la data de custody usa el namespace NVS por defecto (24KB); para muchas credenciales
+habra que dedicar una particion NVS mayor (pendiente Fase 1 'dimensionar NVS').
