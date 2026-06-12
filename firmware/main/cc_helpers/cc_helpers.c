@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include "mbedtls/md.h"
 #include "crypto_engine.h"   /* crypto_sha256 */
+#include "mbedtls/hkdf.h"
+#include "mbedtls/gcm.h"
 
 /* ---------- base32 (RFC 4648) ---------- */
 static int b32val(char c){
@@ -105,4 +107,42 @@ esp_err_t cc_merkle_root(const uint8_t *leaves,size_t n,uint8_t *root_out){
     memcpy(root_out, cur, 32);
     free(cur);
     return ESP_OK;
+}
+
+/* ---- Fase 1: KEK (HKDF) + AEAD (AES-256-GCM) ---- */
+#define CC_KEK_INFO "xami-custody-kek-v1"
+
+esp_err_t cc_kek_derive(const uint8_t *pass,size_t plen,const uint8_t *chip_secret,size_t cslen,
+                        const uint8_t *salt,size_t saltlen,uint8_t *kek_out){
+    if(!pass||!chip_secret||!kek_out) return ESP_ERR_INVALID_ARG;
+    if(plen>256||cslen>64) return ESP_ERR_INVALID_ARG;
+    uint8_t ikm[320];
+    memcpy(ikm,pass,plen); memcpy(ikm+plen,chip_secret,cslen);
+    const mbedtls_md_info_t *md=mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    int rc = md ? mbedtls_hkdf(md, salt, saltlen, ikm, plen+cslen,
+                  (const unsigned char*)CC_KEK_INFO, strlen(CC_KEK_INFO), kek_out, 32)
+                : -1;
+    crypto_zeroize(ikm,sizeof(ikm));
+    return rc==0?ESP_OK:ESP_FAIL;
+}
+
+esp_err_t cc_aead_encrypt(const uint8_t *kek,const uint8_t *nonce,const uint8_t *pt,size_t ptlen,
+                          uint8_t *ct_out,uint8_t *tag_out){
+    if(!kek||!nonce||!ct_out||!tag_out||(!pt&&ptlen)) return ESP_ERR_INVALID_ARG;
+    mbedtls_gcm_context g; mbedtls_gcm_init(&g);
+    int rc=mbedtls_gcm_setkey(&g,MBEDTLS_CIPHER_ID_AES,kek,256);
+    if(rc==0) rc=mbedtls_gcm_crypt_and_tag(&g,MBEDTLS_GCM_ENCRYPT,ptlen,nonce,12,
+                                           NULL,0,pt,ct_out,16,tag_out);
+    mbedtls_gcm_free(&g);
+    return rc==0?ESP_OK:ESP_FAIL;
+}
+
+esp_err_t cc_aead_decrypt(const uint8_t *kek,const uint8_t *nonce,const uint8_t *ct,size_t ctlen,
+                          const uint8_t *tag,uint8_t *pt_out){
+    if(!kek||!nonce||!tag||!pt_out||(!ct&&ctlen)) return ESP_ERR_INVALID_ARG;
+    mbedtls_gcm_context g; mbedtls_gcm_init(&g);
+    int rc=mbedtls_gcm_setkey(&g,MBEDTLS_CIPHER_ID_AES,kek,256);
+    if(rc==0) rc=mbedtls_gcm_auth_decrypt(&g,ctlen,nonce,12,NULL,0,tag,16,ct,pt_out);
+    mbedtls_gcm_free(&g);
+    return rc==0?ESP_OK:ESP_ERR_INVALID_STATE;   /* tag invalido */
 }

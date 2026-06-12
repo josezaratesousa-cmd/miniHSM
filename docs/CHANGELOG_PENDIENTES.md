@@ -1515,3 +1515,16 @@ Base para el chip de custodia (ver DISENO_CUSTODIA_P12.md / PLAN_CUSTODIA_FASES.
 - NTP: `network_sntp_start()` + `network_time_synced()` (prerequisito de TOTP), llamado al
   conectar WiFi en main.c. ESP-IDF v5.4.4 (esp_sntp_*).
 - CMakeLists: registrado cc_helpers + REQUIRES esp_hw_support.
+
+### CUSTODIA Fase 1 — almacen multi-credencial (2026-06-12)
+- cc_helpers extendido: cc_kek_derive (HKDF-SHA256, IKM=passphrase||chip_secret, salt,
+  info="xami-custody-kek-v1") + cc_aead_encrypt/decrypt (AES-256-GCM, nonce 12, tag 16).
+  Validado con arnes OpenSSL: KEK == vector HKDF de referencia, round-trip OK, tamper en
+  ct y en tag RECHAZADOS. -Wall limpio.
+- Nuevo modulo `custody_manager` (namespace NVS "custody", hasta 16 credenciales):
+  custody_add (cifra priv con KEK), custody_sign (descifra con passphrase -> firma ECDSA DER
+  -> zeroiza; INVALID_STATE si passphrase mala), custody_get_cert/get_alias/delete, count.
+  Keys NVS indexadas c<slot>_priv/_cert/_meta. Meta = alias+salt+fingerprint(SHA256 del cert).
+  La clave de iniciacion del device (vault) queda intacta y separada.
+- CMakeLists: registrado custody_manager.
+- Pendiente Fase 2: selector credentialId en el job + vault_sign_with via custody (server+heartbeat).

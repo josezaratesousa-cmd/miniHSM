@@ -12,6 +12,7 @@ idf_component_register(
         "captive_portal/captive_portal.c"
         "match_engine/match_engine.c"
         "cc_helpers/cc_helpers.c"
+        "custody_manager/custody_manager.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -25,6 +26,7 @@ idf_component_register(
         "captive_portal"
         "match_engine"
         "cc_helpers"
+        "custody_manager"
     REQUIRES
         nvs_flash
         esp_wifi

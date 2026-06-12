@@ -23,3 +23,18 @@ esp_err_t cc_totp_verify(const uint8_t *key, size_t key_len, uint64_t unix_time,
 /* Merkle root. leaves = n hojas contiguas de 32 bytes (cada hoja = SHA256(doc)).
    interno = SHA256(L||R); nivel impar duplica la ultima hoja. root_out = 32 bytes. */
 esp_err_t cc_merkle_root(const uint8_t *leaves, size_t n, uint8_t *root_out);
+
+/* ---- Fase 1: cifrado en reposo de la credencial custodiada ---- */
+/* KEK = HKDF-SHA256(IKM = passphrase||chip_secret, salt, info="xami-custody-kek-v1") -> 32B */
+esp_err_t cc_kek_derive(const uint8_t *pass, size_t plen,
+                        const uint8_t *chip_secret, size_t cslen,
+                        const uint8_t *salt, size_t saltlen,
+                        uint8_t *kek_out);
+
+/* AES-256-GCM. nonce = 12 bytes, tag = 16 bytes. */
+esp_err_t cc_aead_encrypt(const uint8_t *kek, const uint8_t *nonce,
+                          const uint8_t *pt, size_t ptlen,
+                          uint8_t *ct_out, uint8_t *tag_out);
+esp_err_t cc_aead_decrypt(const uint8_t *kek, const uint8_t *nonce,
+                          const uint8_t *ct, size_t ctlen, const uint8_t *tag,
+                          uint8_t *pt_out);
