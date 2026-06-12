@@ -28,3 +28,12 @@ PEDIDO: definir cómo asegurar que el optimizador solo acepte llamadas de consol
   correcto para el flujo de firma del panel (NO el de jobs crudo).
 - Estado de un trabajo de PDF: GET /v1/signatures/pdf/{pid} y /pdf/{pid}/download.
 - Estado de devices: GET /devices/ y /devices/{id}.
+
+## P4. Opacidad = FONDO del sello (acordado 2026-06-12)
+Hoy en pades_polling.py: image_opacity -> background_opacity (opacidad de la
+IMAGEN), y text_opacity -> color gris del texto (g=1-op). El usuario decidio que
+la opacidad debe aplicarse a un FONDO del sello (un recuadro detras de imagen+texto),
+no a la imagen ni al texto. El otro asistente ajustara el motor para que exista un
+fill_opacity / fondo del sello configurable. El simulador de console ya asume este
+comportamiento: una sola "Opacidad del fondo" que pone un fondo blanco semitransparente
+detras del contenido del sello. Sincronizar params cuando el API lo soporte.

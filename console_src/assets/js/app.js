@@ -372,7 +372,7 @@ function defaultParams(){
     add_date:true,
     stamp_w:400, stamp_h:120,
     image_mode:'left', image_width:'40%',
-    image_opacity:1.0, text_opacity:1.0,
+    image_opacity:1.0, text_opacity:1.0, bg_opacity:0.0,
     border:false, border_width:2
   };
 }
@@ -411,11 +411,10 @@ function editorHTML(d){
           <div class="rng"><label>Ancho</label><input type="range" id="ed-w" min="120" max="520" value="${p.stamp_w||400}"><span id="ed-wv">${p.stamp_w||400}</span></div>
           <div class="rng"><label>Alto</label><input type="range" id="ed-h" min="60" max="300" value="${p.stamp_h||120}"><span id="ed-hv">${p.stamp_h||120}</span></div>
           <div class="rng"><label>Tamaño img</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
-          <div class="rng"><label>Opacidad img</label><input type="range" id="ed-iopa" min="10" max="100" value="${Math.round((p.image_opacity??1)*100)}"><span id="ed-iopav">${Math.round((p.image_opacity??1)*100)}%</span></div>
-          <div class="rng"><label>Opacidad txt</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
-          <div class="gear-foot">
-            <label><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
-            <select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select>
+          <div class="rng"><label>Opacidad fondo</label><input type="range" id="ed-bopa" min="0" max="100" value="${Math.round((p.bg_opacity??0)*100)}"><span id="ed-bopav">${Math.round((p.bg_opacity??0)*100)}%</span></div>
+          <div class="gear-row"><span class="gr-label">Disposición</span><select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select></div>
+          <div class="gear-row"><label class="gr-check"><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
+            <span id="ed-bwrow" style="${p.border?'':'display:none'};display:inline-flex;align-items:center;gap:5px"><input type="number" id="ed-bw" min="0" max="10" value="${p.border_width||2}" style="width:50px"><span class="muted2">px</span></span>
           </div>
         </div>
       </div>
@@ -450,9 +449,24 @@ function delLine(btn){
 }
 function toggleGear(){
   const pop=document.getElementById('ed-gearpop');
+  const gear=document.getElementById('ed-gear');
   const show = pop.style.display==='none';
-  pop.style.display = show ? 'block':'none';
-  if(show) makeDraggable(pop);
+  if(show){
+    // sacar el popover al body para que el overflow:hidden del sheet no lo recorte (FIX2)
+    if(pop.parentElement.id!=='__body_pop'){ document.body.appendChild(pop); }
+    pop.style.position='fixed';
+    pop.style.zIndex='9999';
+    pop.style.display='block';
+    const r=gear.getBoundingClientRect();
+    const pw=248, ph=pop.offsetHeight||260;
+    // abrir hacia la izquierda y arriba del engranaje; si no cabe arriba, hacia abajo
+    let left=r.left-pw-8; if(left<8) left=r.right+8;
+    let top=r.bottom-ph; if(top<8) top=8;
+    pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto'; pop.style.bottom='auto';
+    makeDraggable(pop);
+  } else {
+    pop.style.display='none';
+  }
 }
 function makeDraggable(pop){
   if(pop._drag) return;
@@ -472,7 +486,7 @@ function makeDraggable(pop){
 }
 
 function bindEditor(){
-  ['ed-nombre','ed-adddate','ed-w','ed-h','ed-iw','ed-iopa','ed-topa','ed-border','ed-imgmode'].forEach(id=>{
+  ['ed-nombre','ed-adddate','ed-w','ed-h','ed-iw','ed-bopa','ed-border','ed-bw','ed-imgmode'].forEach(id=>{
     const el=document.getElementById(id); if(el){ el.addEventListener('input',onEditChange); el.addEventListener('change',onEditChange); }
   });
   document.querySelectorAll('.ed-lineinput').forEach(el=>el.addEventListener('input',updatePreview));
@@ -491,8 +505,8 @@ function onEditChange(e){
   if(t.id==='ed-w') g('ed-wv').textContent=t.value;
   if(t.id==='ed-h') g('ed-hv').textContent=t.value;
   if(t.id==='ed-iw') g('ed-iwv').textContent=t.value+'%';
-  if(t.id==='ed-iopa') g('ed-iopav').textContent=t.value+'%';
-  if(t.id==='ed-topa') g('ed-topav').textContent=t.value+'%';
+  if(t.id==='ed-bopa') g('ed-bopav').textContent=t.value+'%';
+  if(t.id==='ed-border'){ const r=g('ed-bwrow'); if(r) r.style.display=t.checked?'inline-flex':'none'; }
   updatePreview();
 }
 
@@ -516,10 +530,11 @@ function collectParams(){
     box:prev.box||{x1:40,y1:40,x2:440,y2:160},
     image_mode:g('ed-imgmode')?g('ed-imgmode').value:'left',
     image_width:(g('ed-iw')?g('ed-iw').value:40)+'%',
-    image_opacity:(g('ed-iopa')?+g('ed-iopa').value:100)/100,
-    text_opacity:(g('ed-topa')?+g('ed-topa').value:100)/100,
+    image_opacity:1.0,
+    text_opacity:1.0,
+    bg_opacity:(g('ed-bopa')?+g('ed-bopa').value:0)/100,
     border:g('ed-border')?g('ed-border').checked:false,
-    border_width:prev.border_width||2
+    border_width:g('ed-bw')?+g('ed-bw').value:(prev.border_width||2)
   };
 }
 
@@ -536,41 +551,48 @@ function updatePreview(){
   if(!stamp) return;
   stamp.style.display='block';
   stamp.style.border = p.border ? `${p.border_width}px solid #185FA5` : '1px dashed #c9d4e3';
-  // tamaño del sello escalado para el preview (proporcional al real). NO tocar position (lo fija el CSS: abajo-izq).
   const W=p.stamp_w||400, H=p.stamp_h||120;
   const scale=Math.min(230/W, 150/H, 0.6);
   stamp.style.width=Math.round(W*scale)+'px';
   stamp.style.height=Math.round(H*scale)+'px';
   stamp.style.boxSizing='border-box';
   stamp.style.overflow='hidden';
-  stamp.style.background='#fff';
   stamp.style.padding='0';
+  // El FONDO del sello lleva la opacidad (como hara el API): recuadro blanco semitransparente.
+  // bg_opacity = opacidad del fondo. 0 = transparente (se ve el documento), 1 = blanco solido.
+  stamp.style.background='transparent';
 
   const lines=stampLines(p);
-  // color del texto segun text_opacity (igual que el API: g=1-op, gris)
-  const g=Math.round((1-(p.text_opacity??1))*255);
-  const textColor=`rgb(${g},${g},${g})`;
+  const txtHTML=`<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   const hasImg=!!_editDesign._imgURL;
   const imgURL=_editDesign._imgURL;
+  const bgLayer=`<div class="sps-bgfill" style="position:absolute;inset:0;background:#fff;opacity:${p.bg_opacity??0}"></div>`;
 
-  const txtHTML=`<div class="sps-txt" style="color:${textColor}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
-
+  let content='';
   if(hasImg && p.image_mode==='background'){
-    // imagen de fondo: centrada, SIN estirar (contain), con su opacidad; texto encima
-    stamp.innerHTML=`
-      <div class="sps-bg" style="position:absolute;inset:0;opacity:${p.image_opacity};background:url('${imgURL}') center/contain no-repeat"></div>
-      <div class="sps-fg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px">${txtHTML}</div>`;
+    content=`
+      <div class="sps-bgimg" style="position:absolute;inset:0;background:url('${imgURL}') center/contain no-repeat"></div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px">${txtHTML}</div>`;
   } else if(hasImg && p.image_mode==='left'){
-    // imagen izq (ancho = % del box, sin estirar) + texto der con gap
     const iwPct=parseInt(p.image_width)||40;
-    stamp.innerHTML=`
+    content=`
       <div style="position:absolute;inset:0;display:flex;align-items:center;gap:6px;padding:6px">
-        <div class="sps-img" style="width:${iwPct}%;height:100%;flex-shrink:0;opacity:${p.image_opacity};background:url('${imgURL}') left center/contain no-repeat"></div>
+        <div class="sps-img" style="width:${iwPct}%;height:100%;flex-shrink:0;background:url('${imgURL}') left center/contain no-repeat"></div>
         <div style="flex:1;min-width:0">${txtHTML}</div>
       </div>`;
   } else {
-    // solo texto, centrado vertical, alineado izquierda
-    stamp.innerHTML=`<div style="position:absolute;inset:0;display:flex;align-items:center;padding:6px">${txtHTML}</div>`;
+    content=`<div style="position:absolute;inset:0;display:flex;align-items:center;padding:6px">${txtHTML}</div>`;
+  }
+  stamp.innerHTML=bgLayer+content;
+  // FIX1: el engranaje se posiciona junto al sello (esquina superior derecha del sello)
+  const gear=document.getElementById('ed-gear');
+  if(gear){
+    const sw=parseInt(stamp.style.width)||140, sh=parseInt(stamp.style.height)||72;
+    const left=24, bottomCss=28; // coincide con #ed-stamp en CSS
+    gear.style.left=(left+sw-12)+'px';
+    gear.style.right='auto';
+    gear.style.top='auto';
+    gear.style.bottom=(bottomCss+sh-12)+'px';
   }
 }
 
@@ -583,4 +605,4 @@ async function saveDesign(){
   renderDisenos();
 }
 
-function closeEditor(){ drawer.classList.remove('wide'); closeDrawer(); _editDesign=null; }
+function closeEditor(){ const pop=document.getElementById("ed-gearpop"); if(pop && pop.parentElement===document.body) pop.remove(); drawer.classList.remove("wide"); closeDrawer(); _editDesign=null; }

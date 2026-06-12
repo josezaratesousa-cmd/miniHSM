@@ -293,3 +293,13 @@ button svg{vertical-align:-3px}
 /* FIX check fecha alineado */
 .ed-datecheck{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin-top:14px;cursor:pointer}
 .ed-datecheck input{width:15px;height:15px;flex-shrink:0;margin:0}
+
+/* ===== FIX engranaje junto al sello + popover sobre zona izquierda ===== */
+.stamp-gear{position:absolute;z-index:8}
+/* popover: se abre hacia la IZQUIERDA y arriba del engranaje, z-index muy alto para tapar la zona izquierda al scroll */
+.gear-pop{position:absolute;z-index:60;left:auto;right:14px;top:auto;bottom:50px}
+.gear-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:11px;color:var(--muted)}
+.gr-label{white-space:nowrap}
+.gr-check{display:flex;align-items:center;gap:5px;cursor:pointer}
+.gear-row select{font-size:11px;padding:4px 6px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);max-width:140px}
+.gear-row input[type=number]{padding:4px 6px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink)}
