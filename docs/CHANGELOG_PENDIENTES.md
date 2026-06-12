@@ -1539,3 +1539,12 @@ Base para el chip de custodia (ver DISENO_CUSTODIA_P12.md / PLAN_CUSTODIA_FASES.
   (solo si presentes -> retrocompatible: ausencia = clave de iniciacion del device).
 - Pendiente Fase 2 firmware: process_signing_job lee credentialId, descifra auth (ECIES) ->
   passphrase, llama custody_sign y devuelve el cert custodiado.
+
+### CUSTODIA Fase 2 (firmware) — process_signing_job con credencial (2026-06-12)
+- heartbeat/process_signing_job: si el job trae credentialId (numero) -> descifra 'auth'
+  (blob ECIES hex, via match_ecies_decrypt) -> passphrase -> custody_sign(slot,...) y
+  devuelve el cert custodiado (custody_get_cert). Sin credentialId -> vault_sign + cert del
+  device (flujo actual, intacto). passphrase zeroizada siempre.
+- Reutiliza match_ecies_decrypt (info HKDF "xami-match-v1"); TODO: domain-separar para custodia.
+- RIESGO RUNTIME (no compilacion): ECIES + custody_sign inline en la task del heartbeat
+  (stack 8192) puede ser ajustado; quiza mover a task dedicada como match_perform. A vigilar.

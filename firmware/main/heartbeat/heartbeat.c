@@ -17,6 +17,8 @@
 #include "policy_engine.h"
 #include "crypto_engine.h"
 #include "cert_manager.h"
+#include "custody_manager.h"
+#include "match_engine.h"
 #include "version.h"
 
 static const char *TAG = "heartbeat";
@@ -113,17 +115,54 @@ static void process_signing_job(cJSON *job)
 
     uint8_t sig_der[CRYPTO_SIG_DER_MAX_SIZE];
     size_t  sig_len = 0;
-    if (vault_sign(digest, sig_der, &sig_len) != ESP_OK) {
-        ESP_LOGE(TAG, "job %s: vault_sign fallo", rid);
-        post_job_result(rid, device_id, "", "", "ERROR", "sign failed");
-        return;
+    static char cert_pem[CERT_PEM_MAX_SIZE];   /* cabe cert del device y custodiado */
+
+    /* Fase 2: credencial custodiada (slot) vs clave de iniciacion del device */
+    cJSON      *cidit   = cJSON_GetObjectItem(job, "credentialId");
+    const char *authhex = cJSON_GetStringValue(cJSON_GetObjectItem(job, "auth"));
+
+    if (cidit && cJSON_IsNumber(cidit)) {
+        int slot = (int)cJSON_GetNumberValue(cidit);
+        if (!authhex) {
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: missing auth");
+            return;
+        }
+        /* auth = blob ECIES (hex) con la passphrase cifrada hacia la pubkey del device.
+           TODO: domain-separar el info HKDF del de match (hoy reutiliza match_ecies_decrypt). */
+        size_t ablen = strlen(authhex) / 2;
+        uint8_t *authblob = malloc(ablen ? ablen : 1);
+        uint8_t pass[128]; size_t pass_len = 0;
+        esp_err_t aerr = (authblob && crypto_hex_to_bytes(authhex, authblob, ablen) == ESP_OK)
+                         ? match_ecies_decrypt(authblob, ablen, pass, sizeof(pass), &pass_len)
+                         : ESP_FAIL;
+        if (authblob) free(authblob);
+        if (aerr != ESP_OK) {
+            crypto_zeroize(pass, sizeof(pass));
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: auth decrypt failed");
+            return;
+        }
+        esp_err_t serr = custody_sign(slot, pass, pass_len, digest, sig_der, &sig_len);
+        crypto_zeroize(pass, sizeof(pass));
+        if (serr != ESP_OK) {
+            ESP_LOGE(TAG, "job %s: custody_sign slot %d fallo (%d)", rid, slot, (int)serr);
+            post_job_result(rid, device_id, "", "", "ERROR", "custody sign failed");
+            return;
+        }
+        if (custody_get_cert(slot, cert_pem, sizeof(cert_pem)) != ESP_OK) {
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: cert not found");
+            return;
+        }
+    } else {
+        if (vault_sign(digest, sig_der, &sig_len) != ESP_OK) {
+            ESP_LOGE(TAG, "job %s: vault_sign fallo", rid);
+            post_job_result(rid, device_id, "", "", "ERROR", "sign failed");
+            return;
+        }
+        cert_get_pem(cert_pem, sizeof(cert_pem));
     }
 
     static char sig_hex[CRYPTO_SIG_DER_MAX_SIZE * 2 + 1];
     crypto_bytes_to_hex(sig_der, sig_len, sig_hex);
-
-    static char cert_pem[CERT_PEM_MAX_SIZE];
-    cert_get_pem(cert_pem, sizeof(cert_pem));
 
     ESP_LOGI(TAG, "job %s FIRMADO (sig_len=%d), posteando resultado", rid, (int)sig_len);
     post_job_result(rid, device_id, sig_hex, cert_pem, "DONE", "");
