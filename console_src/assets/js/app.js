@@ -102,6 +102,7 @@ async function apiPost(action, body){
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }
+function fileURL(designId){ return '/app/file.php?type=signature&id='+designId+'&t='+Date.now(); }
 function fmtSize(b){ if(b==null)return '—'; if(b<1024)return b+' B'; if(b<1048576)return Math.round(b/1024)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 function fmtDate(s){ if(!s)return '—'; const d=new Date(s.replace(' ','T')); return d.toLocaleDateString('es',{day:'2-digit',month:'short'})+', '+d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':s; return d.innerHTML; }
@@ -333,7 +334,7 @@ function stampHTML(p, imagePath, imageURL){
 function designCardHTML(x){
   const p = x.params||{};
   const prev = p.visible
-    ? `<div class="dprev">${stampHTML(p, x.image_path)}</div>`
+    ? `<div class="dprev">${stampHTML(p, x.image_path?fileURL(x.id):null)}</div>`
     : `<div class="dprev"><div class="dprev-none">Sin sello visible</div></div>`;
   return `<div class="design-card">
     ${prev}
@@ -368,7 +369,7 @@ async function openEditor(id){
   else { d = { id:0, nombre:'Nuevo diseño', es_default:0, params: defaultParams() }; }
   _editDesign = d;
   // si el diseno tiene imagen guardada, usarla en el preview (no es blob, es ruta del servidor)
-  if(d.image_path){ _editDesign._imgURL = d.image_path; }
+  if(d.image_path && d.id){ _editDesign._imgURL = fileURL(d.id); }
   drawer.classList.add('wide');
   openDrawer(editorHTML(d));
   bindEditor();

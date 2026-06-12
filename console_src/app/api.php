@@ -123,13 +123,16 @@ try {
     if (!$info) { http_response_code(400); echo json_encode(['error'=>'not image']); exit; }
     $ext = ['image/png'=>'png','image/jpeg'=>'jpg','image/gif'=>'gif','image/webp'=>'webp'][$info['mime']] ?? null;
     if (!$ext) { http_response_code(400); echo json_encode(['error'=>'bad type']); exit; }
-    $dir = __DIR__ . '/../uploads/designs';
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    // Almacenamiento PRIVADO por tenant, FUERA del docroot. Nada accesible por URL directa.
+    $rel = 'uploads/signatures';
+    $dir = '/home/xami/tenants/'.$tid.'/'.$rel;
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
     $fname = 'u'.$uid.'_'.bin2hex(random_bytes(8)).'.'.$ext;
     $dest = $dir.'/'.$fname;
     if (!move_uploaded_file($f['tmp_name'], $dest)) { http_response_code(500); echo json_encode(['error'=>'save failed']); exit; }
-    @chmod($dest, 0644);
-    echo json_encode(['ok'=>true, 'path'=>'/uploads/designs/'.$fname]);
+    @chmod($dest, 0600);
+    // image_path = ruta RELATIVA dentro de tenants/{tid}/. El servicio file.php la resuelve.
+    echo json_encode(['ok'=>true, 'path'=>$rel.'/'.$fname]);
     exit;
   }
 
