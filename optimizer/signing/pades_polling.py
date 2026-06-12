@@ -11,7 +11,7 @@ import hashlib
 import asyncio
 
 from pyhanko.sign import signers
-from pyhanko.sign.fields import SigFieldSpec, MDPPerm, SigSeedSubFilter
+from pyhanko.sign.fields import SigFieldSpec, MDPPerm, SigSeedSubFilter, enumerate_sig_fields
 from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko_certvalidator.registry import SimpleCertificateStore
@@ -140,7 +140,6 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
 
     GAP = 8
     if side_by_side:
-        kw["background_opacity"] = max(image_opacity, 0.9)
         kw["background_layout"] = SimpleBoxLayoutRule(
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
             margins=Margins(left=0, right=max(0, w_box - img_w), top=0, bottom=0),
@@ -160,6 +159,23 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
             margins=Margins(left=0, right=0, top=0, bottom=0),
             inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
     return TextStampStyle(**kw)
+
+
+def _unique_field_name(w):
+    """Nombre de campo de firma libre: evita 'Signature1 already filled' y habilita
+    firmas multiples. Detecta los campos ya presentes y toma el siguiente Signature{n}."""
+    taken = set()
+    try:
+        for item in enumerate_sig_fields(w):
+            nm = item[0] if isinstance(item, (tuple, list)) else getattr(item, "name", None)
+            if nm:
+                taken.add(str(nm))
+    except Exception:
+        pass
+    n = 1
+    while f"Signature{n}" in taken:
+        n += 1
+    return f"Signature{n}"
 
 
 async def sign_pdf_bytes(
@@ -182,21 +198,28 @@ async def sign_pdf_bytes(
     border: bool = True,
     border_width: int = 3,
     certify: bool = False,
+    certify_level: int = 1,               # 1 NO_CHANGES | 2 FILL_FORMS | 3 ANNOTATE (solo certify)
     tsa_url: str | None = None,          # RFC 3161 -> PAdES-T
 ) -> bytes:
     signer = PollingSigner(device_id)
     w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes), strict=False)
 
-    field_spec = (SigFieldSpec("Signature1", on_page=page, box=box)
-                  if visible else SigFieldSpec("Signature1"))
+    field_name = _unique_field_name(w)   # unico -> habilita firmas multiples
+
+    field_spec = (SigFieldSpec(field_name, on_page=page, box=box)
+                  if visible else SigFieldSpec(field_name))
+
+    # DocMDP: approval NO lleva restriccion; certify usa el nivel pedido (1/2/3)
+    _MDP = {1: MDPPerm.NO_CHANGES, 2: MDPPerm.FILL_FORMS, 3: MDPPerm.ANNOTATE}
+    docmdp = _MDP.get(int(certify_level), MDPPerm.NO_CHANGES) if certify else None
 
     meta = PdfSignatureMetadata(
-        field_name="Signature1",
+        field_name=field_name,
         name=(name or f"MiniHSM-{device_id}"),
         reason=reason, location=location, contact_info=contact,
         certify=certify,
         subfilter=SigSeedSubFilter.PADES,
-        docmdp_permissions=MDPPerm.NO_CHANGES if certify else MDPPerm.FILL_FORMS,
+        docmdp_permissions=docmdp,
     )
 
     stamp_style = None

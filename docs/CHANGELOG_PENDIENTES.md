@@ -1465,3 +1465,21 @@ PENDIENTE auditoria: a) campo Signature1 fijo (bloquea multifirma), b) location
 default "Peru", d) max(image_opacity,0.9) pisa al cliente en modo left, e) approval
 fuerza FILL_FORMS, f) solo 2 de 3 niveles DocMDP, g) saneo Latin-1, i) ceremonia cert.
 (c) se deja: defaults con branding Xami se mantienen por decision de negocio.
+
+### BLOQUE 8 F2: auditoria - quitar reglas de negocio impuestas (2026-06-11)
+Tras la auditoria, corregidas las imposiciones nuestras (el cliente del API decide;
+nosotros solo exponemos opciones reales de PAdES):
+- a) CAMPO UNICO: el field_name estaba fijo en "Signature1" -> error "already filled"
+  al firmar un PDF ya firmado. Ahora _unique_field_name() detecta los campos con
+  enumerate_sig_fields y toma el siguiente Signature{n} -> HABILITA FIRMAS MULTIPLES.
+  Verificado: PDF ya firmado acepta 2da firma (Signature1 + Signature2).
+- b) location: default dejaba de ser "Peru" -> None (no asumir pais del firmante).
+- d) opacidad: se quito max(image_opacity, 0.9) del modo left; se respeta la opacidad
+  que pida el cliente.
+- e) approval SIN DocMDP: approval ya no fuerza FILL_FORMS; docmdp_permissions=None
+  para co-firmas (lo correcto). certify mantiene restriccion. Verificado DocMDP=False.
+- f) NIVEL DocMDP: nuevo param certify_level (1 bloquea / 2 formularios / 3 anotaciones)
+  para mode=certify. Verificado /P=3 con certify_level=3.
+NO tocados por decision: c) defaults con branding Xami se mantienen. g) saneo Latin-1
+queda (su arreglo era fuente incrustada, que dio el bug de espaciado). i) ceremonia
+del cert: se hara al final (enrolamiento server-side, opcion B).

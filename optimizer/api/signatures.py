@@ -55,7 +55,7 @@ async def sign_pdf(
     device_id:     str = Form(None),
     name:          str = Form(None),
     reason:        str = Form("Firma electronica miniHSM (Xami)"),
-    location:      str = Form("Peru"),
+    location:      str = Form(None),
     contact:       str = Form(None),
     visible:       bool = Form(False),
     page:          int = Form(1),           # 1-indexed para el usuario
@@ -70,6 +70,7 @@ async def sign_pdf(
     border_width:  int = Form(2),
     tsa_url:       str = Form(None),           # RFC 3161 -> PAdES-T
     mode:          str = Form("approval"),     # approval | certify
+    certify_level: int = Form(1),              # 1 bloquea | 2 formularios | 3 anotaciones (solo certify)
     stamp_image:   UploadFile = File(None),
 ):
     pdf_bytes = await file.read()
@@ -79,6 +80,8 @@ async def sign_pdf(
     mode = (mode or "approval").lower()
     if mode not in ("approval", "certify"):
         raise HTTPException(400, "mode debe ser 'approval' o 'certify'")
+    if certify_level not in (1, 2, 3):
+        raise HTTPException(400, "certify_level debe ser 1, 2 o 3")
 
     box_tuple = _parse_box(box)
     if visible and box_tuple is None:
@@ -110,7 +113,7 @@ async def sign_pdf(
         image_opacity=image_opacity, text_opacity=text_opacity,
         image_mode=image_mode, image_width=image_width,
         border=border, border_width=border_width,
-        certify=(mode == "certify"), tsa_url=tsa_url,
+        certify=(mode == "certify"), certify_level=certify_level, tsa_url=tsa_url,
     )
     pid = pdf_jobs.create(file.filename or "documento.pdf")
     asyncio.create_task(_run(pid, pdf_bytes, dev, kwargs))
