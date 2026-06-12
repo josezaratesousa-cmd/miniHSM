@@ -1548,3 +1548,18 @@ Base para el chip de custodia (ver DISENO_CUSTODIA_P12.md / PLAN_CUSTODIA_FASES.
 - Reutiliza match_ecies_decrypt (info HKDF "xami-match-v1"); TODO: domain-separar para custodia.
 - RIESGO RUNTIME (no compilacion): ECIES + custody_sign inline en la task del heartbeat
   (stack 8192) puede ser ajustado; quiza mover a task dedicada como match_perform. A vigilar.
+
+### CUSTODIA Fase 3 — TOTP como gate de la firma (2026-06-12)
+- cc_helpers: cc_totp_uri() construye otpauth://totp/...?secret=BASE32&...digits=6&period=30
+  (para el QR de enrolamiento). Validado: base32 correcto, compila -Wall.
+- custody_manager: custody_add ahora genera una semilla TOTP (20B) aleatoria, la CIFRA con la
+  misma KEK (AES-256-GCM) y la persiste (c<slot>_totp); inicializa anti-replay (c<slot>_tc=0);
+  devuelve la semilla raw para el QR. Firma de custody_add cambiada (totp_seed_out).
+- custody_sign: nuevo GATE TOTP -> descifra la semilla, valida el codigo con cc_totp_verify
+  (step 30, 6 digitos, ventana +/-1) usando la hora del chip (NTP), y ANTI-REPLAY por contador
+  de ventana (rechaza reuso). Firma cambiada: + totp_code + unix_time. INVALID_STATE si TOTP
+  invalido/expirado o ya usado.
+- heartbeat: el 'auth' descifrado pasa a ser JSON {"pass","totp"}; toma hora del chip
+  time(NULL) (NTP) y llama custody_sign con el codigo. <time.h> incluido.
+- Verificado: custody_manager.c gcc -Wall -fsyntax-only sin errores. Pendiente Fase 4: endpoint
+  local de ceremonia que use custody_add y muestre el QR (cc_totp_uri).

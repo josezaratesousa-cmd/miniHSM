@@ -11,6 +11,7 @@
 #define CUSTODY_MAX_CREDS  16
 #define CUSTODY_ALIAS_MAX  32
 #define CUSTODY_CERT_MAX   2048
+#define CUSTODY_TOTP_SEED_LEN 20   /* semilla TOTP (RFC6238) */
 
 esp_err_t custody_init(void);
 int       custody_count(void);
@@ -18,11 +19,13 @@ int       custody_count(void);
 /* Alta: cifra priv(32B) con KEK derivada de la passphrase + chip_secret + salt aleatorio.
    Persiste priv cifrada + cert PEM + meta (alias, salt, fingerprint). *slot_out >= 0. */
 esp_err_t custody_add(const char *alias, const uint8_t *priv, const char *cert_pem,
-                      const uint8_t *passphrase, size_t pass_len, int *slot_out);
+                      const uint8_t *passphrase, size_t pass_len,
+                      uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out);
 
 /* Firma digest(32B) con la credencial del slot: descifra priv con la passphrase, firma
    (ECDSA P-256 DER), zeroiza. ESP_ERR_INVALID_STATE si la passphrase es incorrecta. */
 esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
+                       const char *totp_code, uint64_t unix_time,
                        const uint8_t *digest, uint8_t *sig_der_out, size_t *sig_der_len);
 
 esp_err_t custody_get_cert(int slot, char *pem_out, size_t pem_cap);

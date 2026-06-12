@@ -38,3 +38,8 @@ esp_err_t cc_aead_encrypt(const uint8_t *kek, const uint8_t *nonce,
 esp_err_t cc_aead_decrypt(const uint8_t *kek, const uint8_t *nonce,
                           const uint8_t *ct, size_t ctlen, const uint8_t *tag,
                           uint8_t *pt_out);
+
+/* Construye un URI otpauth:// para enrolar Google Authenticator a partir de la semilla.
+   otpauth://totp/<label>?secret=BASE32&issuer=<issuer>&algorithm=SHA1&digits=6&period=30 */
+esp_err_t cc_totp_uri(const uint8_t *seed, size_t seed_len, const char *label,
+                      const char *issuer, char *out, size_t out_cap);

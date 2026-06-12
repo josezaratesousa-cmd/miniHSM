@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <time.h>
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -127,25 +128,38 @@ static void process_signing_job(cJSON *job)
             post_job_result(rid, device_id, "", "", "ERROR", "custody: missing auth");
             return;
         }
-        /* auth = blob ECIES (hex) con la passphrase cifrada hacia la pubkey del device.
-           TODO: domain-separar el info HKDF del de match (hoy reutiliza match_ecies_decrypt). */
+        /* auth = blob ECIES (hex); plaintext = JSON {"pass":"..","totp":"123456"}.
+           El secreto viaja cifrado hacia la pubkey del device. TODO: domain-separar el
+           info HKDF del de match (hoy reutiliza match_ecies_decrypt). */
         size_t ablen = strlen(authhex) / 2;
         uint8_t *authblob = malloc(ablen ? ablen : 1);
-        uint8_t pass[128]; size_t pass_len = 0;
+        uint8_t plain[256]; size_t plain_len = 0;
         esp_err_t aerr = (authblob && crypto_hex_to_bytes(authhex, authblob, ablen) == ESP_OK)
-                         ? match_ecies_decrypt(authblob, ablen, pass, sizeof(pass), &pass_len)
+                         ? match_ecies_decrypt(authblob, ablen, plain, sizeof(plain) - 1, &plain_len)
                          : ESP_FAIL;
         if (authblob) free(authblob);
         if (aerr != ESP_OK) {
-            crypto_zeroize(pass, sizeof(pass));
+            crypto_zeroize(plain, sizeof(plain));
             post_job_result(rid, device_id, "", "", "ERROR", "custody: auth decrypt failed");
             return;
         }
-        esp_err_t serr = custody_sign(slot, pass, pass_len, digest, sig_der, &sig_len);
-        crypto_zeroize(pass, sizeof(pass));
+        plain[plain_len] = 0;
+        cJSON *aj = cJSON_Parse((char*)plain);
+        const char *pass = aj ? cJSON_GetStringValue(cJSON_GetObjectItem(aj, "pass")) : NULL;
+        const char *totp = aj ? cJSON_GetStringValue(cJSON_GetObjectItem(aj, "totp")) : NULL;
+        if (!pass || !totp) {
+            crypto_zeroize(plain, sizeof(plain)); if (aj) cJSON_Delete(aj);
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: auth fields missing");
+            return;
+        }
+        uint64_t now = (uint64_t)time(NULL);   /* hora del chip (NTP) */
+        esp_err_t serr = custody_sign(slot, (const uint8_t*)pass, strlen(pass),
+                                      totp, now, digest, sig_der, &sig_len);
+        crypto_zeroize(plain, sizeof(plain));
+        if (aj) cJSON_Delete(aj);
         if (serr != ESP_OK) {
             ESP_LOGE(TAG, "job %s: custody_sign slot %d fallo (%d)", rid, slot, (int)serr);
-            post_job_result(rid, device_id, "", "", "ERROR", "custody sign failed");
+            post_job_result(rid, device_id, "", "", "ERROR", "custody sign failed (auth/totp)");
             return;
         }
         if (custody_get_cert(slot, cert_pem, sizeof(cert_pem)) != ESP_OK) {

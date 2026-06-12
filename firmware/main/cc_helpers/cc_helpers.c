@@ -146,3 +146,17 @@ esp_err_t cc_aead_decrypt(const uint8_t *kek,const uint8_t *nonce,const uint8_t 
     mbedtls_gcm_free(&g);
     return rc==0?ESP_OK:ESP_ERR_INVALID_STATE;   /* tag invalido */
 }
+
+/* ---- otpauth:// URI (para el QR de enrolamiento) ---- */
+esp_err_t cc_totp_uri(const uint8_t *seed,size_t seed_len,const char *label,
+                      const char *issuer,char *out,size_t out_cap){
+    if(!seed||!label||!issuer||!out) return ESP_ERR_INVALID_ARG;
+    char b32[64];
+    esp_err_t e=cc_base32_encode(seed,seed_len,b32,sizeof(b32));
+    if(e!=ESP_OK) return e;
+    int n=snprintf(out,out_cap,
+        "otpauth://totp/%s?secret=%s&issuer=%s&algorithm=SHA1&digits=6&period=30",
+        label,b32,issuer);
+    if(n<0||(size_t)n>=out_cap) return ESP_ERR_NO_MEM;
+    return ESP_OK;
+}
