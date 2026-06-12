@@ -255,3 +255,15 @@ button svg{vertical-align:-3px}
 .ed-prev-actions{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
 .ed-defcheck2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:auto}
 .sps-img img{max-width:100%;max-height:100%}
+
+/* ===== FIX engranaje + popover (no tapar, posicion fija en la hoja) ===== */
+.stamp-gear{position:absolute;top:10px;right:10px;left:auto;transform:none;width:30px;height:30px;border-radius:50%;background:var(--accent);border:2px solid #fff;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:6;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+.gear-pop{position:absolute;top:46px;right:10px;left:auto;width:225px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 8px 28px rgba(0,0,0,.22);z-index:20;cursor:grab}
+.gear-pop .gear-title{cursor:grab}
+/* texto del sello: SIEMPRE legible, color lo fija el JS (no heredar muted) */
+.sps-txt{font-size:10px;line-height:1.4}
+.sps-txt div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* FIX check predeterminada: que no se pegue al borde */
+.ed-defcheck2{margin-left:auto;white-space:nowrap}
+/* la hoja del preview con posicion relativa para anclar el engranaje */
+.ed-sheet{position:relative}

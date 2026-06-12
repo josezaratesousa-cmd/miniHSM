@@ -450,7 +450,25 @@ function delLine(btn){
 }
 function toggleGear(){
   const pop=document.getElementById('ed-gearpop');
-  pop.style.display = pop.style.display==='none' ? 'block':'none';
+  const show = pop.style.display==='none';
+  pop.style.display = show ? 'block':'none';
+  if(show) makeDraggable(pop);
+}
+function makeDraggable(pop){
+  if(pop._drag) return;
+  pop._drag=true;
+  const head=pop.querySelector('.gear-title')||pop;
+  head.style.cursor='grab';
+  let sx,sy,ox,oy,drag=false;
+  head.addEventListener('mousedown',e=>{
+    drag=true; sx=e.clientX; sy=e.clientY;
+    const r=pop.getBoundingClientRect(), pr=pop.offsetParent.getBoundingClientRect();
+    ox=r.left-pr.left; oy=r.top-pr.top;
+    pop.style.right='auto'; pop.style.left=ox+'px'; pop.style.top=oy+'px';
+    head.style.cursor='grabbing'; e.preventDefault();
+  });
+  window.addEventListener('mousemove',e=>{ if(!drag)return; pop.style.left=(ox+e.clientX-sx)+'px'; pop.style.top=(oy+e.clientY-sy)+'px'; });
+  window.addEventListener('mouseup',()=>{ if(drag){drag=false; head.style.cursor='grab';} });
 }
 
 function bindEditor(){
@@ -516,17 +534,44 @@ function updatePreview(){
   const p=collectParams();
   const stamp=document.getElementById('ed-stamp');
   if(!stamp) return;
-  stamp.style.display='flex';
-  stamp.style.border = p.border ? `${p.border_width}px solid var(--accent)` : '1px dashed var(--line)';
+  stamp.style.display='block';
+  stamp.style.position='relative';
+  stamp.style.border = p.border ? `${p.border_width}px solid #185FA5` : '1px dashed var(--line)';
+  // tamaño del sello escalado para el preview (proporcional al real)
+  const W=p.stamp_w||400, H=p.stamp_h||120;
+  const scale=Math.min(240/W, 150/H, 0.6);
+  stamp.style.width=Math.round(W*scale)+'px';
+  stamp.style.height=Math.round(H*scale)+'px';
+  stamp.style.boxSizing='border-box';
+  stamp.style.overflow='hidden';
+  stamp.style.background='#fff';
+
   const lines=stampLines(p);
+  // color del texto segun text_opacity (igual que el API: g=1-op, gris)
+  const g=Math.round((1-(p.text_opacity??1))*255);
+  const textColor=`rgb(${g},${g},${g})`;
   const hasImg=!!_editDesign._imgURL;
-  const iw=parseInt(p.image_width)||40;
-  const img = hasImg ? `<div class="sps-img" style="opacity:${p.image_opacity};width:${iw}px"><img src="${_editDesign._imgURL}"></div>` : '';
-  const txt = `<div class="sps-txt" style="opacity:${p.text_opacity}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
-  stamp.innerHTML = (p.image_mode==='left') ? img+txt : txt;
-  const ratio=(p.stamp_h||120)/(p.stamp_w||400);
-  stamp.style.width=Math.min(260,(p.stamp_w||400)*0.6)+'px';
-  stamp.style.minHeight=Math.min(160,(p.stamp_h||120)*0.6)+'px';
+  const imgURL=_editDesign._imgURL;
+
+  const txtHTML=`<div class="sps-txt" style="color:${textColor}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
+
+  if(hasImg && p.image_mode==='background'){
+    // imagen de fondo: centrada, SIN estirar (contain), con su opacidad; texto encima
+    stamp.innerHTML=`
+      <div class="sps-bg" style="position:absolute;inset:0;opacity:${p.image_opacity};background:url('${imgURL}') center/contain no-repeat"></div>
+      <div class="sps-fg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px">${txtHTML}</div>`;
+  } else if(hasImg && p.image_mode==='left'){
+    // imagen izq (ancho = % del box, sin estirar) + texto der con gap
+    const iwPct=parseInt(p.image_width)||40;
+    stamp.innerHTML=`
+      <div style="position:absolute;inset:0;display:flex;align-items:center;gap:6px;padding:6px">
+        <div class="sps-img" style="width:${iwPct}%;height:100%;flex-shrink:0;opacity:${p.image_opacity};background:url('${imgURL}') left center/contain no-repeat"></div>
+        <div style="flex:1;min-width:0">${txtHTML}</div>
+      </div>`;
+  } else {
+    // solo texto, centrado vertical, alineado izquierda
+    stamp.innerHTML=`<div style="position:absolute;inset:0;display:flex;align-items:center;padding:6px">${txtHTML}</div>`;
+  }
 }
 
 async function saveDesign(){
