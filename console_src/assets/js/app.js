@@ -309,14 +309,26 @@ async function renderDisenos(){
 
 function stampHTML(p, imagePath, imageURL){
   const lines = stampLines(p);
+  const hasText = lines.length>0;
   const bw = p.border ? (p.border_width||1) : 0;
-  const border = bw ? `${bw}px solid var(--accent)` : '1px solid transparent';
-  const imgSrc = imageURL || (imagePath ? imagePath : '');
-  const img = (imgSrc && p.image_mode!=='none')
-    ? `<div class="sps-img" style="opacity:${p.image_opacity??1}"><img src="${imgSrc}"></div>` : '';
-  const txt = `<div class="sps-txt" style="opacity:${p.text_opacity??1}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
-  const inner = (p.image_mode==='left') ? img+txt : txt;
-  return `<div class="dprev-stamp" style="border:${border}">${inner}</div>`;
+  const border = bw ? `${bw}px solid var(--accent)` : '1px solid #e3e9f2';
+  const imgSrc = imageURL || imagePath || '';
+  const bg = `<div style="position:absolute;inset:0;background:#fff;opacity:${p.bg_opacity??0}"></div>`;
+  const txt = `<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
+  let inner;
+  if(imgSrc && !hasText){
+    inner = `<div style="position:absolute;inset:0;background:url('${imgSrc}') center/cover no-repeat"></div>`;
+  } else if(imgSrc && p.image_mode==='background'){
+    inner = `<div style="position:absolute;inset:0;background:url('${imgSrc}') center/contain no-repeat"></div><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${txt}</div>`;
+  } else if(imgSrc && p.image_mode==='left'){
+    const iw=parseInt(p.image_width)||40;
+    inner = `<div style="position:absolute;inset:0;display:flex;align-items:center;gap:5px;padding:4px"><div style="width:${iw}%;height:100%;flex-shrink:0;background:url('${imgSrc}') left center/contain no-repeat"></div><div style="flex:1;min-width:0">${txt}</div></div>`;
+  } else if(hasText){
+    inner = `<div style="position:absolute;inset:0;display:flex;align-items:center;padding:4px">${txt}</div>`;
+  } else {
+    inner = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b9c4d4;font-size:9px">Sin contenido</div>`;
+  }
+  return `<div class="dprev-stamp" style="border:${border};position:relative;overflow:hidden">${bg}${inner}</div>`;
 }
 function designCardHTML(x){
   const p = x.params||{};
@@ -355,6 +367,8 @@ async function openEditor(id){
   if (id){ d = await apiGet('design_get',{id}); }
   else { d = { id:0, nombre:'Nuevo diseño', es_default:0, params: defaultParams() }; }
   _editDesign = d;
+  // si el diseno tiene imagen guardada, usarla en el preview (no es blob, es ruta del servidor)
+  if(d.image_path){ _editDesign._imgURL = d.image_path; }
   drawer.classList.add('wide');
   openDrawer(editorHTML(d));
   bindEditor();
@@ -609,12 +623,25 @@ function updatePreview(){
 }
 
 async function saveDesign(){
-  const params=collectParams();
-  const nombre=document.getElementById('ed-nombre').value||'Mi firma';
-  const es_default=document.getElementById('ed-default').checked?1:0;
-  await apiPost('design_save',{id:_editDesign.id, nombre, params, es_default});
-  closeEditor();
-  renderDisenos();
+  const btn=event&&event.target?event.target.closest('button'):null;
+  if(btn){ btn.disabled=true; btn.style.opacity='0.6'; }
+  try{
+    const params=collectParams();
+    const nombre=document.getElementById('ed-nombre').value||'Mi firma';
+    const es_default=document.getElementById('ed-default').checked?1:0;
+    // 1) si hay imagen NUEVA seleccionada, subirla primero
+    let image_path=_editDesign.image_path||null;
+    if(_editDesign._imgFile){
+      const fd=new FormData(); fd.append('image', _editDesign._imgFile);
+      const r=await fetch(API+'?action=design_image',{method:'POST',credentials:'same-origin',body:fd});
+      const j=await r.json();
+      if(j&&j.ok){ image_path=j.path; } else { alert('No se pudo subir la imagen'); if(btn){btn.disabled=false;btn.style.opacity='';} return; }
+    }
+    // 2) guardar el diseno con la ruta de imagen
+    await apiPost('design_save',{id:_editDesign.id, nombre, params, es_default, image_path});
+    closeEditor();
+    renderDisenos();
+  }catch(e){ alert('Error al guardar: '+e.message); if(btn){btn.disabled=false;btn.style.opacity='';} }
 }
 
 function closeEditor(){ const pop=document.getElementById("ed-gearpop"); if(pop && pop.parentElement===document.body) pop.remove(); drawer.classList.remove("wide"); closeDrawer(); _editDesign=null; }

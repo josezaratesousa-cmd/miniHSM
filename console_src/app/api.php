@@ -89,13 +89,14 @@ try {
     $nombre = trim($in['nombre'] ?? 'Sin nombre');
     $params = json_encode($in['params'] ?? new stdClass());
     $def    = !empty($in['es_default']) ? 1 : 0;
+    $img    = isset($in['image_path']) ? ($in['image_path'] ?: null) : null;
     if ($def) { $db->prepare("UPDATE sign_designs SET es_default=0 WHERE user_id=?")->execute([$uid]); }
     if ($id) {
-      $st = $db->prepare("UPDATE sign_designs SET nombre=?,params=?,es_default=? WHERE id=? AND user_id=?");
-      $st->execute([$nombre,$params,$def,$id,$uid]);
+      $st = $db->prepare("UPDATE sign_designs SET nombre=?,params=?,es_default=?,image_path=? WHERE id=? AND user_id=?");
+      $st->execute([$nombre,$params,$def,$img,$id,$uid]);
     } else {
-      $st = $db->prepare("INSERT INTO sign_designs (user_id,nombre,params,es_default) VALUES (?,?,?,?)");
-      $st->execute([$uid,$nombre,$params,$def]);
+      $st = $db->prepare("INSERT INTO sign_designs (user_id,nombre,params,es_default,image_path) VALUES (?,?,?,?,?)");
+      $st->execute([$uid,$nombre,$params,$def,$img]);
       $id = (int)$db->lastInsertId();
     }
     echo json_encode(['ok'=>true,'id'=>$id]);
@@ -108,6 +109,27 @@ try {
     $st = $db->prepare("DELETE FROM sign_designs WHERE id=? AND user_id=?");
     $st->execute([$id,$uid]);
     echo json_encode(['ok'=>true]);
+    exit;
+  }
+
+
+  if ($action === 'design_image' && $_SERVER['REQUEST_METHOD']==='POST') {
+    if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+      http_response_code(400); echo json_encode(['error'=>'no file']); exit;
+    }
+    $f = $_FILES['image'];
+    if ($f['size'] > 2*1024*1024) { http_response_code(400); echo json_encode(['error'=>'too big']); exit; }
+    $info = @getimagesize($f['tmp_name']);
+    if (!$info) { http_response_code(400); echo json_encode(['error'=>'not image']); exit; }
+    $ext = ['image/png'=>'png','image/jpeg'=>'jpg','image/gif'=>'gif','image/webp'=>'webp'][$info['mime']] ?? null;
+    if (!$ext) { http_response_code(400); echo json_encode(['error'=>'bad type']); exit; }
+    $dir = __DIR__ . '/../uploads/designs';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $fname = 'u'.$uid.'_'.bin2hex(random_bytes(8)).'.'.$ext;
+    $dest = $dir.'/'.$fname;
+    if (!move_uploaded_file($f['tmp_name'], $dest)) { http_response_code(500); echo json_encode(['error'=>'save failed']); exit; }
+    @chmod($dest, 0644);
+    echo json_encode(['ok'=>true, 'path'=>'/uploads/designs/'.$fname]);
     exit;
   }
 
