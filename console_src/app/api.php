@@ -177,6 +177,142 @@ try {
     exit;
   }
 
+
+  if ($action === 'sign_send' && $_SERVER['REQUEST_METHOD']==='POST') {
+    $in = json_decode(file_get_contents('php://input'), true) ?: [];
+    $pdf_rel  = $in['pdf_path'] ?? '';        // uploads/documents/xxx.pdf (relativo al tenant)
+    $design_id= (int)($in['design_id'] ?? 0);
+    $device_id= trim($in['device_id'] ?? '');
+    $page_ref = $in['page_ref'] ?? 'last';     // last | last-1 | first | n
+    $page_num = (int)($in['page_num'] ?? 1);
+    $box      = $in['box'] ?? null;            // "x1,y1,x2,y2" ya resuelto por el front
+    $filename = $in['filename'] ?? 'documento.pdf';
+
+    // validar el PDF dentro del tenant
+    $pdf_full = '/home/xami/tenants/'.$tid.'/'.ltrim($pdf_rel,'/');
+    $realBase = realpath('/home/xami/tenants/'.$tid);
+    $realPdf  = realpath($pdf_full);
+    if (!$realPdf || strpos($realPdf, $realBase)!==0 || !is_file($realPdf)) {
+      http_response_code(400); echo json_encode(['error'=>'pdf not found']); exit;
+    }
+
+    // cargar el diseño (debe ser del usuario)
+    $st = $db->prepare("SELECT * FROM sign_designs WHERE id=? AND user_id=? LIMIT 1");
+    $st->execute([$design_id, $uid]);
+    $design = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$design) { http_response_code(400); echo json_encode(['error'=>'design not found']); exit; }
+    $params = json_decode($design['params'] ?: '{}', true) ?: [];
+
+    // medir paginas del PDF para resolver page_ref
+    $pages = 0; $out=[];
+    @exec('pdfinfo '.escapeshellarg($realPdf).' 2>/dev/null', $out);
+    foreach ($out as $line) if (preg_match('/^Pages:\s+(\d+)/',$line,$m)) $pages=(int)$m[1];
+    if ($pages<1) $pages=1;
+    // resolver pagina real (1-indexed)
+    $page = 1;
+    if ($page_ref==='last') $page=$pages;
+    elseif ($page_ref==='last-1') $page=max(1,$pages-1);
+    elseif ($page_ref==='first') $page=1;
+    elseif ($page_ref==='n') $page=min(max(1,$page_num),$pages);
+
+    // armar texto del sello desde stamp_lines + fecha
+    $lines = isset($params['stamp_lines'])&&is_array($params['stamp_lines']) ? $params['stamp_lines'] : [];
+    if (!empty($params['add_date'])) $lines[] = date('d/m/Y');
+    $stamp_text = implode("\n", $lines);
+
+    // construir multipart para el API
+    $api = 'http://127.0.0.1:8182/v1/signatures/pdf';
+    $post = [
+      'file'         => new CURLFile($realPdf, 'application/pdf', $filename),
+      'device_id'    => $device_id,
+      'visible'      => 'true',
+      'page'         => (string)$page,
+      'stamp_source' => 'custom',
+      'stamp_text'   => $stamp_text,
+      'image_mode'   => $params['image_mode'] ?? 'left',
+      'image_width'  => $params['image_width'] ?? '40%',
+      'image_opacity'=> (string)($params['image_opacity'] ?? 1.0),
+      'text_opacity' => (string)($params['text_opacity'] ?? 1.0),
+      'fill_opacity' => (string)($params['fill_opacity'] ?? 0.0),
+      'fill_color'   => $params['fill_color'] ?? '#FFFFFF',
+      'border'       => !empty($params['border']) ? 'true':'false',
+      'border_width' => (string)($params['border_width'] ?? 2),
+      'mode'         => $params['mode'] ?? 'approval',
+    ];
+    if ($box) $post['box'] = $box;
+    // imagen del sello si el diseño tiene
+    if (!empty($design['image_path'])) {
+      $img_full = '/home/xami/tenants/'.$tid.'/'.ltrim($design['image_path'],'/');
+      if (is_file($img_full)) $post['stamp_image'] = new CURLFile($img_full, mime_content_type($img_full), basename($img_full));
+    }
+
+    $ch = curl_init($api);
+    curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>$post, CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>60]);
+    $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code!==200) { http_response_code(502); echo json_encode(['error'=>'api error','code'=>$code,'detail'=>$resp]); exit; }
+    $j = json_decode($resp, true);
+    $request_id = $j['requestId'] ?? null;
+    if (!$request_id) { http_response_code(502); echo json_encode(['error'=>'no requestId','detail'=>$resp]); exit; }
+
+    // registrar en sign_requests + evento
+    $size = filesize($realPdf);
+    $st = $db->prepare("INSERT INTO sign_requests (tenant_id,user_id,device_id,design_id,request_id,filename,size_bytes,pages,origen,estado,facturable,created_at) VALUES (?,?,?,?,?,?,?,?,?, 'pendiente', 1, NOW())");
+    $st->execute([$tid,$uid,$device_id,$design_id,$request_id,$filename,$size,$pages,'console']);
+    $srid = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO sign_events (sign_request_id,tipo,actor,meta,created_at) VALUES (?,?,?,?,NOW())")
+       ->execute([$srid,'enviado',$u['email'] ?? 'console', json_encode(['page'=>$page,'box'=>$box,'design'=>$design['nombre']])]);
+
+    echo json_encode(['ok'=>true,'request_id'=>$request_id,'sign_request_id'=>$srid,'page'=>$page]);
+    exit;
+  }
+
+
+  if ($action === 'sign_status' && $_SERVER['REQUEST_METHOD']==='GET') {
+    $request_id = trim($_GET['request_id'] ?? '');
+    if (!$request_id) { http_response_code(400); echo json_encode(['error'=>'no request_id']); exit; }
+    // el sign_request debe ser del usuario
+    $st = $db->prepare("SELECT * FROM sign_requests WHERE request_id=? AND user_id=? LIMIT 1");
+    $st->execute([$request_id,$uid]);
+    $sr = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$sr) { http_response_code(404); echo json_encode(['error'=>'not found']); exit; }
+    // si ya esta firmado/cerrado, no re-consultar
+    if (in_array($sr['estado'], ['firmado','error','rechazado'])) {
+      echo json_encode(['ok'=>true,'status'=>$sr['estado'],'final'=>true]); exit;
+    }
+
+    // consultar estado al API
+    $ch = curl_init('http://127.0.0.1:8182/v1/signatures/pdf/'.urlencode($request_id));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>15]);
+    $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($code!==200) { echo json_encode(['ok'=>true,'status'=>$sr['estado'],'api_code'=>$code]); exit; }
+    $j = json_decode($resp, true);
+    $apistatus = strtolower($j['status'] ?? '');
+
+    if ($apistatus === 'done') {
+      // descargar el PDF firmado a la zona privada del tenant
+      $ch = curl_init('http://127.0.0.1:8182/v1/signatures/pdf/'.urlencode($request_id).'/download');
+      curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>30]);
+      $pdf = curl_exec($ch); $dc = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+      if ($dc===200 && substr($pdf,0,4)==='%PDF') {
+        $dir = '/home/xami/tenants/'.$tid.'/signed';
+        if (!is_dir($dir)) @mkdir($dir,0700,true);
+        $fname = 'signed_'.$sr['id'].'_'.bin2hex(random_bytes(4)).'.pdf';
+        file_put_contents($dir.'/'.$fname, $pdf); @chmod($dir.'/'.$fname,0600);
+        $db->prepare("UPDATE sign_requests SET estado='firmado', signed_at=NOW() WHERE id=?")->execute([$sr['id']]);
+        $db->prepare("INSERT INTO sign_events (sign_request_id,tipo,actor,meta,created_at) VALUES (?,?,?,?,NOW())")
+           ->execute([$sr['id'],'firmado','device', json_encode(['signed_path'=>'signed/'.$fname])]);
+        echo json_encode(['ok'=>true,'status'=>'firmado','final'=>true]); exit;
+      }
+      echo json_encode(['ok'=>true,'status'=>'procesando']); exit;
+    }
+    if ($apistatus === 'error') {
+      $db->prepare("UPDATE sign_requests SET estado='error', closed_at=NOW() WHERE id=?")->execute([$sr['id']]);
+      echo json_encode(['ok'=>true,'status'=>'error','final'=>true,'detail'=>$j['error']??null]); exit;
+    }
+    // sigue procesando
+    echo json_encode(['ok'=>true,'status'=>'procesando','api'=>$apistatus]); exit;
+  }
+
   http_response_code(400);
   echo json_encode(['error'=>'acción desconocida']);
 } catch (Throwable $e) {

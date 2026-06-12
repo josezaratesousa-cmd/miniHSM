@@ -415,11 +415,60 @@ function nfResolveFormulas(){
   box.innerHTML=`<span class="nf-ok">${svg("check",12)} En este PDF (${Math.round(W)}×${Math.round(H)}): x=${Math.round(x)}, y=${Math.round(y)}</span>`;
 }
 
-function nfSend(){
+function nfResolvePosition(){
+  if(!_nf.pdf||!_nf.design) return null;
+  const W=_nf.pdf.width, H=_nf.pdf.height;
+  const p=_nf.design.params||{};
+  const sw=p.stamp_w||400, sh=p.stamp_h||120;
+  let x, y;
+  if(_nf.adv){
+    x=nfEval(document.getElementById('nf-fx').value, W, H);
+    y=nfEval(document.getElementById('nf-fy').value, W, H);
+    if(x===null||y===null||Number.isNaN(x)||Number.isNaN(y)) return null;
+  } else {
+    const m=36;
+    if(_nf.align_h==='left') x=m; else if(_nf.align_h==='center') x=(W-sw)/2; else x=W-sw-m;
+    if(_nf.align_v==='bottom') y=m; else if(_nf.align_v==='middle') y=(H-sh)/2; else y=H-sh-m;
+  }
+  x=Math.max(0,Math.min(x, W-sw));
+  y=Math.max(0,Math.min(y, H-sh));
+  return {x1:Math.round(x), y1:Math.round(y), x2:Math.round(x+sw), y2:Math.round(y+sh)};
+}
+
+async function nfSend(){
   if(!_nf.pdf){ alert('Primero sube un documento PDF.'); return; }
   if(!_nf.design){ alert('Elige un diseño de firma.'); return; }
-  // (el envio real al API se implementa en el siguiente paso)
-  alert('Listo para enviar:\n- PDF: '+_nf.pdf.filename+' ('+_nf.pdf.pages+' pág)\n- Diseño: '+_nf.design.nombre+'\n- Página: '+document.getElementById('nf-page').value+'\n- Posición: '+(_nf.adv?('x='+_nf.fx+', y='+_nf.fy):(_nf.align_h+'/'+_nf.align_v))+'\n\n(El envío real al API es el siguiente paso.)');
+  const pos=nfResolvePosition();
+  if(!pos){ alert('Revisa la posición: la fórmula no es válida.'); return; }
+  const dev=document.getElementById('nf-dev').value;
+  const pageRef=document.getElementById('nf-page').value;
+  const pageNum=+(document.getElementById('nf-pagenum').value||1);
+  const box=`${pos.x1},${pos.y1},${pos.x2},${pos.y2}`;
+
+  const btn=document.getElementById('nf-send');
+  btn.disabled=true; btn.style.opacity='0.6'; const orig=btn.innerHTML; btn.innerHTML='Enviando…';
+  try{
+    const r=await apiPost('sign_send',{
+      pdf_path:_nf.pdf.path, design_id:_nf.design.id, device_id:dev,
+      page_ref:pageRef, page_num:pageNum, box, filename:_nf.pdf.filename
+    });
+    if(!r||!r.ok){ alert('No se pudo enviar: '+(r&&r.error||'error')); btn.disabled=false; btn.style.opacity=''; btn.innerHTML=orig; return; }
+    closeNuevo();
+    renderView('pendientes');
+    refreshCounts();
+    nfPoll(r.request_id, 0);
+  }catch(e){
+    alert('Error al enviar: '+e.message); btn.disabled=false; btn.style.opacity=''; btn.innerHTML=orig;
+  }
+}
+
+async function nfPoll(rid, tries){
+  if(tries>80) return;
+  try{
+    const r=await apiGet('sign_status',{request_id:rid});
+    if(r&&r.final){ refreshCounts(); renderView('pendientes'); return; }
+  }catch(e){}
+  setTimeout(()=>nfPoll(rid, tries+1), 2500);
 }
 
 function closeNuevo(){ drawer.classList.remove('wide'); closeDrawer(); _nf=null; }
