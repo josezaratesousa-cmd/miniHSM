@@ -45,3 +45,13 @@ opacidad. NO altera image_opacity ni text_opacity (siguen igual). Default 0.0 =>
 firmas existentes no cambian. Form param: fill_opacity: float = Form(0.0).
 console YA usa fill_opacity en el editor (renombrado de bg_opacity). Cuando el API
 lo soporte, el preview coincidira pixel-perfect.
+
+## P4 RESUELTO (2026-06-12)
+El otro asistente implemento fill_opacity Y ademas fill_color en el optimizador:
+- _FillTextStamp dibuja un recuadro de relleno (color+opacidad) como capa base
+  debajo de imagen+texto, cubriendo toda la caja del sello.
+- fill_opacity: float 0..1 (default 0 = no dibuja, transparente).
+- fill_color: hex #RRGGBB (default #FFFFFF).
+- Form params en /v1/signatures/pdf: fill_opacity, fill_color.
+console: editor ya incluye Op.fondo (fill_opacity) + Color fondo (fill_color),
+el preview y las cards aplican color+opacidad al recuadro de fondo. SINCRONIZADO.

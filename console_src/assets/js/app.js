@@ -314,7 +314,7 @@ function stampHTML(p, imagePath, imageURL){
   const bw = p.border ? (p.border_width||1) : 0;
   const border = bw ? `${bw}px solid var(--accent)` : '1px solid #e3e9f2';
   const imgSrc = imageURL || imagePath || '';
-  const bg = `<div style="position:absolute;inset:0;background:#fff;opacity:${p.fill_opacity??0}"></div>`;
+  const bg = `<div style="position:absolute;inset:0;background:${p.fill_color||'#FFFFFF'};opacity:${p.fill_opacity??0}"></div>`;
   const txt = `<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   let inner;
   if(imgSrc && !hasText){
@@ -387,7 +387,7 @@ function defaultParams(){
     add_date:true,
     stamp_w:400, stamp_h:120,
     image_mode:'left', image_width:'40%',
-    image_opacity:1.0, text_opacity:1.0, fill_opacity:0.0,
+    image_opacity:1.0, text_opacity:1.0, fill_opacity:0.0, fill_color:'#FFFFFF',
     border:false, border_width:2
   };
 }
@@ -427,6 +427,7 @@ function editorHTML(d){
           <div class="rng"><label>Alto</label><input type="range" id="ed-h" min="60" max="300" value="${p.stamp_h||120}"><span id="ed-hv">${p.stamp_h||120}</span></div>
           <div class="rng"><label>Tam. imagen</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
           <div class="rng"><label>Op. fondo</label><input type="range" id="ed-bopa" min="0" max="100" value="${Math.round((p.fill_opacity??0)*100)}"><span id="ed-bopav">${Math.round((p.fill_opacity??0)*100)}%</span></div>
+          <div class="rng"><label>Color fondo</label><input type="color" id="ed-fcolor" value="${p.fill_color||'#FFFFFF'}" style="width:100%;height:24px;padding:0;border:1px solid var(--line);border-radius:6px;cursor:pointer"><span></span></div>
           <div class="gear-row"><span class="gr-label">Disposición</span><select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select></div>
           <div class="gear-row"><label class="gr-check"><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
             <span id="ed-bwrow" style="${p.border?'':'display:none'};display:inline-flex;align-items:center;gap:5px"><input type="number" id="ed-bw" min="0" max="10" value="${p.border_width||2}" style="width:50px"><span class="muted2">px</span></span>
@@ -507,7 +508,7 @@ function makeDraggable(pop){
 }
 
 function bindEditor(){
-  ['ed-nombre','ed-adddate','ed-w','ed-h','ed-iw','ed-bopa','ed-border','ed-bw','ed-imgmode'].forEach(id=>{
+  ['ed-nombre','ed-adddate','ed-w','ed-h','ed-iw','ed-bopa','ed-fcolor','ed-border','ed-bw','ed-imgmode'].forEach(id=>{
     const el=document.getElementById(id); if(el){ el.addEventListener('input',onEditChange); el.addEventListener('change',onEditChange); }
   });
   document.querySelectorAll('.ed-lineinput').forEach(el=>el.addEventListener('input',updatePreview));
@@ -554,6 +555,7 @@ function collectParams(){
     image_opacity:1.0,
     text_opacity:1.0,
     fill_opacity:(g('ed-bopa')?+g('ed-bopa').value:0)/100,
+    fill_color:(g('ed-fcolor')?g('ed-fcolor').value:'#FFFFFF'),
     border:g('ed-border')?g('ed-border').checked:false,
     border_width:g('ed-bw')?+g('ed-bw').value:(prev.border_width||2)
   };
@@ -588,7 +590,7 @@ function updatePreview(){
   const txtHTML=`<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   const hasImg=!!_editDesign._imgURL;
   const imgURL=_editDesign._imgURL;
-  const bgLayer=`<div class="sps-bgfill" style="position:absolute;inset:0;background:#fff;opacity:${p.fill_opacity??0}"></div>`;
+  const bgLayer=`<div class="sps-bgfill" style="position:absolute;inset:0;background:${p.fill_color||'#FFFFFF'};opacity:${p.fill_opacity??0}"></div>`;
 
   let content='';
   if(hasImg && !hasText){
