@@ -68,6 +68,8 @@ async def sign_pdf(
     image_width:   str = Form(None),           # '40%' o '120' (pts) - solo modo left
     border:        bool = Form(True),
     border_width:  int = Form(2),
+    fill_opacity:  float = Form(0.0),          # fondo del sello: 0=transparente (default)..1=opaco
+    fill_color:    str = Form("#FFFFFF"),       # color del fondo (#RRGGBB) si fill_opacity>0
     tsa_url:       str = Form(None),           # RFC 3161 -> PAdES-T
     mode:          str = Form("approval"),     # approval | certify
     certify_level: int = Form(1),              # 1 bloquea | 2 formularios | 3 anotaciones (solo certify)
@@ -113,6 +115,7 @@ async def sign_pdf(
         image_opacity=image_opacity, text_opacity=text_opacity,
         image_mode=image_mode, image_width=image_width,
         border=border, border_width=border_width,
+        fill_opacity=fill_opacity, fill_color=fill_color,
         certify=(mode == "certify"), certify_level=certify_level, tsa_url=tsa_url,
     )
     pid = pdf_jobs.create(file.filename or "documento.pdf")

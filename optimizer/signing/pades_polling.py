@@ -15,7 +15,10 @@ from pyhanko.sign.fields import SigFieldSpec, MDPPerm, SigSeedSubFilter, enumera
 from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko_certvalidator.registry import SimpleCertificateStore
-from pyhanko.stamp import TextStampStyle
+from pyhanko.stamp import TextStampStyle, TextStamp
+from pyhanko.pdf_utils import content, generic
+from pyhanko.pdf_utils.generic import pdf_name
+from dataclasses import dataclass
 from pyhanko.pdf_utils.images import PdfImage
 from pyhanko.pdf_utils.text import TextBoxStyle
 from pyhanko.pdf_utils.layout import (
@@ -105,8 +108,58 @@ def _resolve_img_width(image_width, w_box, default_frac=0.40):
     return max(0.0, min(w, w_box))
 
 
+def _parse_hex_color(hexstr, default=(1.0, 1.0, 1.0)):
+    """Convierte '#RRGGBB' a (r, g, b) en 0..1. Hex invalido -> blanco (defensivo)."""
+    try:
+        h = str(hexstr).strip().lstrip("#")
+        if len(h) != 6:
+            return default
+        return (int(h[0:2], 16) / 255.0,
+                int(h[2:4], 16) / 255.0,
+                int(h[4:6], 16) / 255.0)
+    except Exception:
+        return default
+
+
+class _FillTextStamp(TextStamp):
+    """TextStamp con un recuadro de relleno (color+opacidad) como CAPA BASE, debajo
+    de imagen y texto, cubriendo toda la caja del sello. fill_opacity<=0 -> no dibuja
+    nada (comportamiento estandar, sin cambios)."""
+
+    def render(self):
+        base = super().render()
+        op = float(getattr(self.style, "fill_opacity", 0.0) or 0.0)
+        if op <= 0:
+            return base
+        r, g, b = getattr(self.style, "fill_rgb", (1.0, 1.0, 1.0))
+        self.set_resource(
+            category=content.ResourceType.EXT_G_STATE,
+            name=pdf_name("/FillGS"),
+            value=generic.DictionaryObject({
+                pdf_name("/ca"): generic.FloatObject(op),
+                pdf_name("/CA"): generic.FloatObject(op),
+            }),
+        )
+        bbox = self.box
+        fill = (b"q /FillGS gs %g %g %g rg 0 0 %g %g re f Q"
+                % (r, g, b, bbox.width, bbox.height))
+        # base = b"q " + resto ; insertar el relleno justo tras el 'q' inicial
+        return base[:2] + fill + b" " + base[2:]
+
+
+@dataclass(frozen=True)
+class _FillTextStampStyle(TextStampStyle):
+    fill_rgb: tuple = (1.0, 1.0, 1.0)
+    fill_opacity: float = 0.0
+
+    def create_stamp(self, writer, box, text_params):
+        return _FillTextStamp(writer=writer, style=self, box=box,
+                              text_params=text_params)
+
+
 def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
-                       text_opacity=1.0, border=True, border_width=3, image_width=None):
+                       text_opacity=1.0, border=True, border_width=3, image_width=None,
+                       fill_opacity=0.0, fill_color="#FFFFFF"):
     """TextStampStyle SIN padding interno (margenes 0) y con la imagen escalada
     preservando su proporcion (SHRINK_TO_FIT). image_mode 'left' reparte
     imagen(izq)/texto(der) segun image_width; extremos >=98% solo imagen, <=2%
@@ -158,6 +211,10 @@ def _build_stamp_style(stamp_text, bg, image_opacity, image_mode, box,
             x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
             margins=Margins(left=0, right=0, top=0, bottom=0),
             inner_content_scaling=InnerScaling.SHRINK_TO_FIT)
+    if fill_opacity and float(fill_opacity) > 0:
+        return _FillTextStampStyle(
+            fill_rgb=_parse_hex_color(fill_color),
+            fill_opacity=float(fill_opacity), **kw)
     return TextStampStyle(**kw)
 
 
@@ -200,6 +257,8 @@ async def sign_pdf_bytes(
     certify: bool = False,
     certify_level: int = 1,               # 1 NO_CHANGES | 2 FILL_FORMS | 3 ANNOTATE (solo certify)
     tsa_url: str | None = None,          # RFC 3161 -> PAdES-T
+    fill_opacity: float = 0.0,           # 0=transparente (default) .. 1=opaco
+    fill_color: str = "#FFFFFF",         # color del recuadro si fill_opacity>0
 ) -> bytes:
     signer = PollingSigner(device_id)
     w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes), strict=False)
@@ -233,7 +292,7 @@ async def sign_pdf_bytes(
         stamp_style = _build_stamp_style(
             text, bg, image_opacity, image_mode, box,
             text_opacity=text_opacity, border=border, border_width=border_width,
-            image_width=image_width)
+            image_width=image_width, fill_opacity=fill_opacity, fill_color=fill_color)
 
     timestamper = HTTPTimeStamper(tsa_url) if tsa_url else None
     pdf_signer = signers.PdfSigner(

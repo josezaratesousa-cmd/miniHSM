@@ -1483,3 +1483,18 @@ nosotros solo exponemos opciones reales de PAdES):
 NO tocados por decision: c) defaults con branding Xami se mantienen. g) saneo Latin-1
 queda (su arreglo era fuente incrustada, que dio el bug de espaciado). i) ceremonia
 del cert: se hara al final (enrolamiento server-side, opcion B).
+
+### BLOQUE 8 F2: fill_opacity + fill_color (fondo del sello) (2026-06-11)
+Nuevos params INDEPENDIENTES en /v1/signatures/pdf:
+- fill_opacity (float 0..1, default 0.0): opacidad de un recuadro de fondo solido
+  detras de TODO el sello (imagen + texto), cubriendo toda la caja (dentro del borde).
+- fill_color (str "#RRGGBB", default "#FFFFFF"): color del recuadro; solo aplica si
+  fill_opacity>0.
+Default 0.0 = transparente = comportamiento actual EXACTO (firmas existentes no
+cambian: _build_stamp_style devuelve el TextStampStyle normal salvo que fill_opacity>0).
+NO toca image_opacity (imagen) ni text_opacity (color del texto): son ejes distintos.
+Implementacion: subclase _FillTextStamp (override render) que inyecta 'q /FillGS gs
+R G B rg 0 0 W H re f Q' como CAPA BASE (tras el q inicial, antes de imagen/texto), con
+opacidad real via ExtGState /FillGS (/ca,/CA). _FillTextStampStyle(frozen) override
+create_stamp. Funciona en los 3 casos (sin imagen / background / left). Verificado en
+hardware: stream con relleno como 1a capa cubriendo 0 0 W H. Muestra: descargas/sello_fill.png
