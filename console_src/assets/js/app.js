@@ -403,7 +403,7 @@ function editorHTML(d){
     <div class="ed-right">
       <div class="ed-prev-label">${svg("eye")} Así se verá tu firma</div>
       <div class="ed-sheet" id="ed-sheet">
-        <div class="sheet-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="sheet-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <div class="sheet-stamp" id="ed-stamp"></div>
         <button type="button" class="stamp-gear" id="ed-gear" onclick="toggleGear()" aria-label="Ajustar el sello">${svg("settings",15)}</button>
         <div class="gear-pop" id="ed-gearpop" style="display:none">

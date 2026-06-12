@@ -317,3 +317,23 @@ button svg{vertical-align:-3px}
 
 /* FIX label opacidad que se desbordaba sobre la barra */
 .gear-pop .rng label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+
+/* ===== documento mas completo: varios parrafos llenando la hoja ===== */
+.ed-right .sheet-lines{top:18px;left:18px;right:18px;bottom:96px;gap:6px;justify-content:flex-start}
+.ed-right .sheet-lines span{height:5px;border-radius:3px;background:#eef1f5}
+.ed-right .sheet-lines span:nth-child(1){width:48%;height:8px;margin-bottom:6px}
+.ed-right .sheet-lines span:nth-child(2){width:95%}
+.ed-right .sheet-lines span:nth-child(3){width:90%}
+.ed-right .sheet-lines span:nth-child(4){width:93%}
+.ed-right .sheet-lines span:nth-child(5){width:60%;margin-bottom:8px}
+.ed-right .sheet-lines span:nth-child(6){width:35%;height:7px;margin-bottom:4px}
+.ed-right .sheet-lines span:nth-child(7){width:92%}
+.ed-right .sheet-lines span:nth-child(8){width:88%}
+.ed-right .sheet-lines span:nth-child(9){width:94%}
+.ed-right .sheet-lines span:nth-child(10){width:70%;margin-bottom:8px}
+.ed-right .sheet-lines span:nth-child(11){width:91%}
+.ed-right .sheet-lines span:nth-child(12){width:86%}
+.ed-right .sheet-lines span:nth-child(13){width:93%}
+.ed-right .sheet-lines span:nth-child(14){width:89%}
+.ed-right .sheet-lines span:nth-child(15){width:80%}
+.ed-right .sheet-lines span:nth-child(16){width:55%}
