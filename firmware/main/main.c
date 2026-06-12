@@ -81,6 +81,7 @@ void app_main(void)
         esp_restart();
     } else {
         ESP_ERROR_CHECK(network_http_server_start());
+        network_sntp_start();   /* Fase 0: sincroniza hora (prerequisito TOTP) */
 
         /* Match: si el device no esta emparejado, se empareja con el server
          * (recibe el HMAC secret cifrado por ECIES). Bloque 9. */

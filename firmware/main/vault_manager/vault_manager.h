@@ -47,3 +47,8 @@ esp_err_t vault_destroy_key(void);
 /* Solo para uso interno del cert_manager durante generacion de cert/CSR.
    La privkey se zeroiza inmediatamente despues de usarla. */
 esp_err_t vault_get_privkey_raw(uint8_t *privkey_out, uint8_t *pubkey_out);
+
+/* Fase 0 — secreto local del chip para la KEK de custodia.
+   Opcion 1 (MVP): aleatorio de 32 bytes persistido en NVS. Encapsulado para migrar
+   luego a eFuse/HMAC (Opcion 2) sin tocar el resto del codigo. */
+esp_err_t vault_get_chip_kek_secret(uint8_t *secret_out);

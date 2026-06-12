@@ -10,6 +10,8 @@
 #include "esp_netif.h"
 #include "esp_http_server.h"
 #include "esp_timer.h"
+#include "esp_sntp.h"
+#include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "cJSON.h"
@@ -639,3 +641,28 @@ static esp_err_t handler_provision_reconfigure(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ---- Fase 0: NTP / hora (prerequisito de TOTP) ---- */
+static volatile bool s_time_synced = false;
+
+static void sntp_synced_cb(struct timeval *tv)
+{
+    (void)tv;
+    s_time_synced = true;
+    ESP_LOGI(TAG, "Hora sincronizada por NTP");
+}
+
+esp_err_t network_sntp_start(void)
+{
+    if (esp_sntp_enabled()) return ESP_OK;
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    sntp_set_time_sync_notification_cb(sntp_synced_cb);
+    esp_sntp_init();
+    ESP_LOGI(TAG, "SNTP iniciado (pool.ntp.org)");
+    return ESP_OK;
+}
+
+bool network_time_synced(void)
+{
+    return s_time_synced;
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include <stdbool.h>
 
 /**
  * @brief Inicializa WiFi en modo Station y se conecta.
@@ -19,3 +20,7 @@ esp_err_t network_http_server_start(void);
  * @brief Detiene el servidor HTTP.
  */
 esp_err_t network_http_server_stop(void);
+
+/* Fase 0 — NTP. Llamar tras conectar WiFi (network_http_server_start). */
+esp_err_t network_sntp_start(void);
+bool      network_time_synced(void);

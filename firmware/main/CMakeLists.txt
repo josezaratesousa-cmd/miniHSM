@@ -11,6 +11,7 @@ idf_component_register(
         "wifi_provision/wifi_provision.c"
         "captive_portal/captive_portal.c"
         "match_engine/match_engine.c"
+        "cc_helpers/cc_helpers.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -23,6 +24,7 @@ idf_component_register(
         "wifi_provision"
         "captive_portal"
         "match_engine"
+        "cc_helpers"
     REQUIRES
         nvs_flash
         esp_wifi
@@ -32,6 +34,7 @@ idf_component_register(
         esp_system
         lwip
         mbedtls
+        esp_hw_support
         esp-tls
         espressif__cjson
 )

@@ -1504,3 +1504,14 @@ Agregados en "Apariencia del sello": slider "Opacidad fondo" (id=fop, 0-100% -> 
 0..1) + color picker "Color fondo" (id=fcol -> fill_color #RRGGBB). Solo se envian si la
 opacidad > 0 (default 0 = sin fondo, sin cambios). Reflejado en collect()/submit y en el
 cURL dinamico. Validado: node --check OK, HTTP 200.
+
+### CUSTODIA Fase 0 — prerequisitos firmware (2026-06-12)
+Base para el chip de custodia (ver DISENO_CUSTODIA_P12.md / PLAN_CUSTODIA_FASES.md):
+- Nuevo modulo `cc_helpers` (base32 RFC4648, TOTP RFC6238 HMAC-SHA1 + verify con ventana,
+  Merkle root SHA-256). Logica validada contra vectores conocidos (TOTP RFC6238 x6, base32,
+  Merkle) compilando el .c real con arnes OpenSSL: TODO OK, -Wall limpio.
+- `vault_get_chip_kek_secret()` (Opcion 1: aleatorio 32B en NVS, encapsulado para migrar a
+  eFuse en produccion). NVS key `kek_secret` en namespace `vault`.
+- NTP: `network_sntp_start()` + `network_time_synced()` (prerequisito de TOTP), llamado al
+  conectar WiFi en main.c. ESP-IDF v5.4.4 (esp_sntp_*).
+- CMakeLists: registrado cc_helpers + REQUIRES esp_hw_support.

@@ -4,11 +4,14 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "esp_random.h"
 
 static const char *TAG         = "vault_manager";
 static const char *NVS_NS      = "vault";
 static const char *NVS_PRIVKEY = "privkey";
 static const char *NVS_PUBKEY  = "pubkey";
+static const char *NVS_KEKSEC  = "kek_secret";
+#define CHIP_KEK_SECRET_SIZE 32
 
 /* Clave publica en RAM (puede estar en memoria, no es secreta) */
 static uint8_t s_pubkey[CRYPTO_PUBKEY_SIZE];
@@ -177,4 +180,27 @@ esp_err_t vault_get_privkey_raw(uint8_t *privkey_out, uint8_t *pubkey_out)
 {
     if (!s_loaded) return ESP_ERR_INVALID_STATE;
     return nvs_load_keypair(privkey_out, pubkey_out);
+}
+
+
+/* Fase 0 — secreto local del chip (Opcion 1: aleatorio en NVS).
+   Se genera una sola vez y se persiste; en arranques siguientes se reusa.
+   xami.run NO lo conoce. Sustituible por eFuse/HMAC en produccion. */
+esp_err_t vault_get_chip_kek_secret(uint8_t *secret_out)
+{
+    if (!secret_out) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+
+    size_t len = CHIP_KEK_SECRET_SIZE;
+    err = nvs_get_blob(h, NVS_KEKSEC, secret_out, &len);
+    if (err == ESP_ERR_NVS_NOT_FOUND || (err == ESP_OK && len != CHIP_KEK_SECRET_SIZE)) {
+        esp_fill_random(secret_out, CHIP_KEK_SECRET_SIZE);   /* primera vez */
+        err = nvs_set_blob(h, NVS_KEKSEC, secret_out, CHIP_KEK_SECRET_SIZE);
+        if (err == ESP_OK) err = nvs_commit(h);
+        ESP_LOGI(TAG, "chip_kek_secret generado y persistido");
+    }
+    nvs_close(h);
+    return err;
 }
