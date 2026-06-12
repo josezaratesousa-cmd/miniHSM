@@ -11,6 +11,8 @@ import logging
 import hmac
 import hashlib
 import secrets as _secrets
+
+from api import credentials
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
@@ -52,6 +54,7 @@ class HeartbeatResponse(BaseModel):
     message:         str
     nextPollSeconds: int          = NEXT_POLL_SECONDS
     job:             dict | None  = None
+    ceremony:        dict | None  = None
 
 
 @router.post("/heartbeat", response_model=HeartbeatResponse)
@@ -102,6 +105,14 @@ def heartbeat(req: Request, body: HeartbeatRequest):
                 job_payload["auth"] = pending["auth"]
             log.info(f"Heartbeat entrega job {pending['requestId']} a {body.deviceId}")
 
+    # Fase 4a: ceremonia de custodia pendiente? (el chip entra en modo AP con el secreto)
+    ceremony_payload = None
+    cer = credentials.pop_pending_ceremony(body.deviceId)
+    if cer:
+        ceremony_payload = {"ceremonyId": cer["ceremonyId"], "alias": cer["alias"],
+                            "secret": cer["secret"]}
+        log.info(f"Heartbeat entrega ceremonia {cer['ceremonyId']} a {body.deviceId}")
+
     return HeartbeatResponse(
         status          = "ok",
         deviceId        = body.deviceId,
@@ -109,6 +120,7 @@ def heartbeat(req: Request, body: HeartbeatRequest):
         message         = "registered",
         nextPollSeconds = NEXT_POLL_SECONDS,
         job             = job_payload,
+        ceremony        = ceremony_payload,
     )
 
 

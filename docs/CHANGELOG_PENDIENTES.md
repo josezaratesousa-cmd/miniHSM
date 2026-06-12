@@ -1571,3 +1571,15 @@ en sdkconfig.defaults: CONFIG_PARTITION_TABLE_CUSTOM + CUSTOM_FILENAME="partitio
 partitions.csv mantiene nvs en 0x9000/0x6000 -> identidad del device intacta al reflashear.
 Nota: la data de custody usa el namespace NVS por defecto (24KB); para muchas credenciales
 habra que dedicar una particion NVS mayor (pendiente Fase 1 'dimensionar NVS').
+
+### CUSTODIA Fase 4a (server) — inicio de ceremonia (2026-06-12)
+- Nuevo router api/credentials.py: POST /v1/credentials/ceremony/start {deviceId, alias} ->
+  emite un secreto de ceremonia de un solo uso (TTL 600s), devuelve pubkey + fingerprint
+  (SHA-256 de la pubkey) + secret + ceremonyId. Anclaje de confianza: el cliente compara ese
+  fingerprint contra el que muestra el chip en modo AP.
+- heartbeat (devices.py): entrega la ceremonia pendiente al chip (campo 'ceremony' con
+  ceremonyId+alias+secret); se consume (pop) al entregarse. main.py registra el router.
+- xami.run nunca ve el .p12/passphrase/semilla TOTP; solo orquesta.
+- Verificado contra el device real: devuelve pubkey/fingerprint/secret OK (fingerprint[:16]==deviceId).
+- Pendiente: UI online (starter) + UI offline servida por el chip (Fase 4b firmware: modo AP,
+  endpoint local, apertura .p12, ECIES, custody_add, QR).

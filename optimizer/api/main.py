@@ -20,6 +20,7 @@ from signing.xades import sign_xml
 from signing.cades import sign_data, verify_cades
 from api.devices import router as devices_router
 from api.signatures import router as signatures_router
+from api.credentials import router as credentials_router
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("serverHSM")
@@ -46,6 +47,7 @@ app.add_middleware(
 
 app.include_router(devices_router)
 app.include_router(signatures_router)
+app.include_router(credentials_router)
 
 
 # ── Modelos (definidos antes de su uso) ──
