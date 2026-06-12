@@ -80,8 +80,15 @@
 - Publicar **solo el root**, nunca contenido. Definir la cadena.
 - **Entregable testeable:** verificar externamente que un lote fue autorizado y sellado en el tiempo.
 
-## FASE 7 — Endurecimiento (Opción 2)  [al final]
+## FASE 7 — Endurecimiento (Opción 2)  [SOLO AL ENTRAR A PRODUCCIÓN]
 **Objetivo:** resistencia física real.
+
+> **NO se hace durante el diseño.** Quemar eFuses y activar flash encryption / secure boot
+> **bloquea el reflasheo libre por cable**, y ahora estamos cambiando el código
+> constantemente. Hasta producción seguimos en **Opción 1** (clave aleatoria en NVS) y
+> flasheamos sin restricción. El "flasheo de la clave" (eFuse) es el **último paso**, una vez
+> congelado el firmware.
+
 - Migrar `vault_get_chip_kek_secret()` a **eFuse + HMAC** del ESP32-S3.
 - Activar **flash encryption** (+ secure boot). Requiere **re-enrolar** las credenciales.
 - Proteger semilla TOTP en NVS, anti-replay persistente, auditoría de eventos de custodia.
