@@ -62,6 +62,55 @@ try {
     exit;
   }
 
+
+  if ($action === 'designs') {
+    $st = $db->prepare("SELECT id,nombre,params,image_path,es_default,updated_at FROM sign_designs WHERE user_id=? ORDER BY es_default DESC, nombre");
+    $st->execute([$uid]);
+    $items = [];
+    foreach ($st as $d) { $d['params'] = json_decode($d['params'], true); $items[] = $d; }
+    echo json_encode(['items'=>$items]);
+    exit;
+  }
+
+  if ($action === 'design_get') {
+    $id = (int)($_GET['id'] ?? 0);
+    $st = $db->prepare("SELECT id,nombre,params,image_path,es_default FROM sign_designs WHERE id=? AND user_id=? LIMIT 1");
+    $st->execute([$id,$uid]);
+    $d = $st->fetch();
+    if (!$d) { http_response_code(404); echo json_encode(['error'=>'not found']); exit; }
+    $d['params'] = json_decode($d['params'], true);
+    echo json_encode($d);
+    exit;
+  }
+
+  if ($action === 'design_save' && $_SERVER['REQUEST_METHOD']==='POST') {
+    $in = json_decode(file_get_contents('php://input'), true) ?: [];
+    $id     = (int)($in['id'] ?? 0);
+    $nombre = trim($in['nombre'] ?? 'Sin nombre');
+    $params = json_encode($in['params'] ?? new stdClass());
+    $def    = !empty($in['es_default']) ? 1 : 0;
+    if ($def) { $db->prepare("UPDATE sign_designs SET es_default=0 WHERE user_id=?")->execute([$uid]); }
+    if ($id) {
+      $st = $db->prepare("UPDATE sign_designs SET nombre=?,params=?,es_default=? WHERE id=? AND user_id=?");
+      $st->execute([$nombre,$params,$def,$id,$uid]);
+    } else {
+      $st = $db->prepare("INSERT INTO sign_designs (user_id,nombre,params,es_default) VALUES (?,?,?,?)");
+      $st->execute([$uid,$nombre,$params,$def]);
+      $id = (int)$db->lastInsertId();
+    }
+    echo json_encode(['ok'=>true,'id'=>$id]);
+    exit;
+  }
+
+  if ($action === 'design_delete' && $_SERVER['REQUEST_METHOD']==='POST') {
+    $in = json_decode(file_get_contents('php://input'), true) ?: [];
+    $id = (int)($in['id'] ?? 0);
+    $st = $db->prepare("DELETE FROM sign_designs WHERE id=? AND user_id=?");
+    $st->execute([$id,$uid]);
+    echo json_encode(['ok'=>true]);
+    exit;
+  }
+
   http_response_code(400);
   echo json_encode(['error'=>'acción desconocida']);
 } catch (Throwable $e) {

@@ -68,6 +68,7 @@ $u = auth_require();
   <div id="drawer" class="drawer"><div class="drawer-inner" id="drawerInner"></div></div>
   <div id="overlay" class="overlay"></div>
 </div>
+<script>window.__userEmail="<?= htmlspecialchars($em) ?>";window.__userName=(window.__userEmail||"").split("@")[0];</script>
 <script src="/assets/js/app.js"></script>
 </body>
 </html>
