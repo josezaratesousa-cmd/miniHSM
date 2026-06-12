@@ -18,6 +18,14 @@ Esto rompe a propósito el lema "la clave nunca entra/sale del chip": es una dec
 consciente para que el equipo sea **custodio de un certificado existente, bajo
 responsabilidad del usuario** (similar a cargar un cert en un token/HSM).
 
+**Aclaración clave — la clave de iniciación (device) es ÚNICA por chip y COMÚN a todas las
+credenciales.** Su rol es **transporte e identidad**, no firmar documentos: los clientes
+cifran hacia su pubkey (ECIES) para que **solo el chip** abra los paquetes (.p12, autorización
+de firma), y sirve para el **match** con xami.run y para el **fingerprint**. La firma de
+documentos la hacen las **claves custodiadas**, cada una con su passphrase + TOTP. Que el
+transporte use una clave compartida **no rompe la separación por usuario**: la autorización
+real es **por credencial** (passphrase + TOTP individuales).
+
 ## 2. Principios transversales
 - Todo lo sensible (carga del .p12, enrolamiento TOTP, autorización de firma) ocurre
   **solo en la red WiFi local**, contra el servidor HTTP del propio chip. **Nunca desde xami.run.**
@@ -155,9 +163,10 @@ h) **Límite real = espacio en flash.** Cada credencial ~ priv(32B cifrada) + ce
    + semilla TOTP + metadata. El driver de espacio es el **PEM del cert**. Hay que **dimensionar
    la partición NVS** (`partitions.csv`) según cuántos empleados soportar (decenas son viables).
 
-i) **Revisión de decisión previa.** Antes cerramos "1 device + 1 custodiada (2 claves)". El
-   caso HSM-de-empresa lo **generaliza a "1 device + N custodiadas"**. Falta fijar el límite
-   (1 / pocas / N configurable) como decisión explícita.
+i) **DECISIÓN (2026-06-12): N credenciales de custodia.** El equipo es un **chip de
+   custodia** multi-usuario: **1 clave de device** (identidad/transporte) + **N custodiadas**
+   (una por empleado). Supera la idea previa de "máximo 1 custodiada". El límite efectivo lo
+   pone el espacio en flash (ver h).
 
 ## 10. Puntos abiertos / pendientes
 - **Descubrimiento del chip en la LAN** (mDNS / IP): el anclaje de confianza va por
