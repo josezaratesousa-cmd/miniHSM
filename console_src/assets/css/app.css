@@ -227,3 +227,31 @@ button svg{vertical-align:-3px}
 .sheet-page{position:absolute;bottom:8px;right:12px;font-size:10px;color:var(--muted)}
 .ed-data-row input[type=text]{font-size:13px}
 @media(max-width:760px){.ed-data-grid{grid-template-columns:1fr}}
+
+/* ===== editor simple: lineas de texto ===== */
+.ed-line{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ed-line input{flex:1;padding:9px 11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:13px}
+.ed-linedel{background:none;border:none;color:var(--muted);cursor:pointer;padding:5px;border-radius:6px;display:flex;align-items:center}
+.ed-linedel:hover{background:var(--panel);color:var(--bad)}
+.ed-addline{background:none;border:1px dashed var(--line);color:var(--accent);cursor:pointer;font-size:12px;padding:7px 12px;border-radius:8px;display:flex;align-items:center;gap:5px;margin-top:4px}
+.ed-addline:hover{border-color:var(--accent);background:rgba(77,184,255,.06)}
+.ed-datecheck{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:12px}
+
+/* ===== engranaje sobre el sello + popover ===== */
+.ed-sheet{position:relative}
+.stamp-gear{position:absolute;width:28px;height:28px;border-radius:50%;background:var(--accent);border:2px solid var(--bg2);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;top:50%;left:50%;transform:translate(60px,-30px)}
+.stamp-gear:hover{filter:brightness(1.1)}
+.gear-pop{position:absolute;top:14px;right:14px;width:230px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:10}
+.gear-title{font-size:12px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.gear-pop .rng{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:var(--muted)}
+.gear-pop .rng label{min-width:74px}
+.gear-pop .rng input[type=range]{flex:1}
+.gear-pop .rng span{min-width:32px;text-align:right;color:var(--muted)}
+.gear-foot{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:9px;margin-top:4px;font-size:11px;color:var(--muted)}
+.gear-foot label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.gear-foot select{font-size:11px;padding:4px 6px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink)}
+
+.ed-pos-note{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:10px 0 0;line-height:1.4}
+.ed-prev-actions{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+.ed-defcheck2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:auto}
+.sps-img img{max-width:100%;max-height:100%}

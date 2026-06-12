@@ -364,195 +364,176 @@ async function openEditor(id){
 function defaultParams(){
   return {
     firmante:{value:(window.__userName||'Usuario'),ask:false},
-    reason:{value:'Aprobación del documento',ask:false},
-    location:{value:'',ask:false},
-    contact:{value:'',ask:false},
+    reason:{value:'',ask:false}, location:{value:'',ask:false}, contact:{value:'',ask:false},
     mode:'approval', visible:true, page:1,
     box:{x1:40,y1:40,x2:440,y2:160},
-    stamp_source:'attributes', stamp_lines:[],
+    stamp_source:'custom',
+    stamp_lines:[(window.__userName||'Usuario')],
+    add_date:true,
+    stamp_w:400, stamp_h:120,
     image_mode:'left', image_width:'40%',
-    image_opacity:0.5, text_opacity:1.0,
-    border:true, border_width:2
+    image_opacity:1.0, text_opacity:1.0,
+    border:false, border_width:2
   };
-}
-
-function fldData(key,label,p){
-  const v=p[key]||{value:'',ask:false};
-  return `<div class="ed-data-row">
-    <input type="text" data-k="${key}" data-f="value" value="${esc(v.value)}" placeholder="${label}">
-    <label class="ed-ask" title="Pedir este dato al cargar el documento"><input type="checkbox" data-k="${key}" data-f="ask" ${v.ask?'checked':''}> pedir</label>
-  </div>`;
 }
 
 function editorHTML(d){
   const p=d.params;
-  const src = p.stamp_source || 'attributes';
+  const lines=(p.stamp_lines&&p.stamp_lines.length)?p.stamp_lines:[''];
+  const addDate = p.add_date!==false;
   return `
-  <div class="drawer-head"><span class="dh-title">${svg("pencil")} ${d.id?'Editar':'Nuevo'} diseño</span><button class="dh-close" onclick="closeEditor()">&times;</button></div>
+  <div class="drawer-head"><span class="dh-title">${svg("pencil")} ${d.id?'Editar':'Nueva'} firma</span><button class="dh-close" onclick="closeEditor()">&times;</button></div>
   <div class="editor">
 
     <div class="ed-form">
-      <div class="fld"><label>Nombre del diseño</label><input type="text" id="ed-nombre" value="${esc(d.nombre)}"></div>
+      <div class="fld"><label>Nombre de esta firma</label><input type="text" id="ed-nombre" value="${esc(d.nombre)}" placeholder="Mi firma de contratos"></div>
 
-      <div class="ed-acc" data-acc="img">
-        <div class="ed-acc-head"><span>${svg("image")} Imagen y estilo</span><span class="ed-chev">${svg("chev")}</span></div>
-        <div class="ed-acc-body">
-          <div class="fld"><label>Imagen del sello (logo / firma)</label>
-            <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':svg("upload",18)+' Arrastra una imagen'}</div>
-            <input type="file" id="ed-imgfile" accept="image/*" hidden>
-          </div>
-          <div class="fld"><label>Disposición</label><select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen izq · texto der</option><option value="background"${p.image_mode==='background'?' selected':''}>Fondo</option></select></div>
-          <div class="rng"><label>Opacidad imagen</label><input type="range" id="ed-iopa" min="0" max="100" value="${Math.round((p.image_opacity??.5)*100)}"><span id="ed-iopav">${Math.round((p.image_opacity??.5)*100)}%</span></div>
-          <div class="rng"><label>Opacidad texto</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
-          <div class="rng"><label>Borde</label><input type="checkbox" id="ed-border" ${p.border?'checked':''}><input type="number" id="ed-bw" value="${p.border_width||2}" min="0" max="10" style="width:54px"><span class="muted2">px</span></div>
-        </div>
+      <div class="fld"><label>Tu logo o firma <span class="muted2">(opcional)</span></label>
+        <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':svg("upload",20)+'<br>Arrastra una imagen'}</div>
+        <input type="file" id="ed-imgfile" accept="image/*" hidden>
       </div>
 
-      <div class="ed-acc" data-acc="pos">
-        <div class="ed-acc-head"><span>${svg("layout")} Posición</span><span class="ed-chev">${svg("chev")}</span></div>
-        <div class="ed-acc-body">
-          <div class="fld"><label>Página</label><input type="number" id="ed-page" value="${p.page||1}" min="1"></div>
-          <div class="fld"><label>Coordenadas (x1,y1,x2,y2)</label>
-            <div class="coords4"><input type="number" id="ed-x1" value="${p.box.x1}"><input type="number" id="ed-y1" value="${p.box.y1}"><input type="number" id="ed-x2" value="${p.box.x2}"><input type="number" id="ed-y2" value="${p.box.y2}"></div>
-          </div>
-        </div>
+      <div class="fld"><label>¿Qué quieres que diga?</label>
+        <div id="ed-lines-wrap">${lines.map((l,i)=>lineRow(l,i)).join('')}</div>
+        <button type="button" class="ed-addline" onclick="addLine()">${svg("plus",15)} Agregar línea</button>
+        <label class="ed-datecheck"><input type="checkbox" id="ed-adddate" ${addDate?'checked':''}> Añadir la fecha automáticamente</label>
       </div>
-
-      <label class="ed-defcheck"><input type="checkbox" id="ed-default" ${d.es_default?'checked':''}> Usar como predeterminado</label>
     </div>
 
     <div class="ed-right">
-      <div class="ed-data">
-        <p class="ed-group">DATOS DE LA FIRMA <span class="ed-hint">(✓ pedir = se solicita al firmar)</span></p>
-        <div class="ed-data-grid">
-          ${fldData('firmante','Firmante',p)}
-          ${fldData('reason','Razón',p)}
-          ${fldData('location','Lugar',p)}
-          ${fldData('contact','Contacto',p)}
-        </div>
-        <div class="fld" style="margin-top:6px"><label>Modo de firma</label>
-          <select id="ed-mode"><option value="approval"${p.mode==='approval'?' selected':''}>Aprobación — permite más firmas</option><option value="certify"${p.mode==='certify'?' selected':''}>Certificación — sella</option></select>
-        </div>
-        <div class="ed-sec-head" style="margin-top:10px"><span>${svg("stamp")} Sello visible</span>
-          <label class="sw"><input type="checkbox" id="ed-visible" ${p.visible?'checked':''}> <span></span></label>
-        </div>
-        <div id="ed-stampbox" style="${p.visible?'':'display:none'}">
-          <div class="fld"><label>Contenido del sello</label>
-            <select id="ed-src">
-              <option value="attributes"${src==='attributes'?' selected':''}>Atributos — usa los datos de la firma</option>
-              <option value="default"${src==='default'?' selected':''}>Estándar — texto del sistema</option>
-              <option value="custom"${src==='custom'?' selected':''}>Personalizado — tú escribes el texto</option>
-            </select>
-          </div>
-          <div class="fld" id="ed-linesbox" style="${src==='custom'?'':'display:none'}">
-            <label>Texto del sello (una línea por renglón)</label>
-            <textarea id="ed-lines" rows="3" placeholder="Firmado por %(signer)s&#10;Fecha: %(ts)s">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
-            <div class="ed-hint2">Comodines: %(signer)s = firmante · %(ts)s = fecha.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="ed-prev-label">${svg("eye")} Así se verá en el documento</div>
+      <div class="ed-prev-label">${svg("eye")} Así se verá tu firma</div>
       <div class="ed-sheet" id="ed-sheet">
-        <div class="sheet-lines"><span></span><span></span><span></span><span></span></div>
+        <div class="sheet-lines"><span></span><span></span><span></span></div>
         <div class="sheet-stamp" id="ed-stamp"></div>
-        <div class="sheet-page" id="ed-pagelbl">página 1</div>
+        <button type="button" class="stamp-gear" id="ed-gear" onclick="toggleGear()" aria-label="Ajustar el sello">${svg("settings",15)}</button>
+        <div class="gear-pop" id="ed-gearpop" style="display:none">
+          <div class="gear-title">${svg("settings",14)} Ajustar el sello</div>
+          <div class="rng"><label>Ancho</label><input type="range" id="ed-w" min="120" max="520" value="${p.stamp_w||400}"><span id="ed-wv">${p.stamp_w||400}</span></div>
+          <div class="rng"><label>Alto</label><input type="range" id="ed-h" min="60" max="300" value="${p.stamp_h||120}"><span id="ed-hv">${p.stamp_h||120}</span></div>
+          <div class="rng"><label>Tamaño imagen</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
+          <div class="rng"><label>Opacidad img</label><input type="range" id="ed-iopa" min="10" max="100" value="${Math.round((p.image_opacity??1)*100)}"><span id="ed-iopav">${Math.round((p.image_opacity??1)*100)}%</span></div>
+          <div class="rng"><label>Opacidad texto</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
+          <div class="gear-foot">
+            <label><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
+            <select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select>
+          </div>
+        </div>
       </div>
+      <p class="ed-pos-note">${svg("info",14)} La página y posición se eligen al firmar cada documento.</p>
       <div class="ed-prev-actions">
-        <button class="btn" onclick="saveDesign()">${svg("save")} Guardar diseño</button>
+        <button class="btn" onclick="saveDesign()">${svg("save")} Guardar firma</button>
         <button class="btn ghost" onclick="closeEditor()">Cancelar</button>
+        <label class="ed-defcheck2"><input type="checkbox" id="ed-default" ${d.es_default?'checked':''}> Predeterminada</label>
       </div>
     </div>
   </div>`;
 }
 
+function lineRow(val,i){
+  return `<div class="ed-line"><input type="text" class="ed-lineinput" value="${esc(val)}" placeholder="Escribe una línea…"><button type="button" class="ed-linedel" onclick="delLine(this)" aria-label="Eliminar línea">${svg("x",14)}</button></div>`;
+}
+function addLine(){
+  const w=document.getElementById('ed-lines-wrap');
+  const div=document.createElement('div');
+  div.innerHTML=lineRow('',0);
+  const node=div.firstChild;
+  w.appendChild(node);
+  node.querySelector('input').addEventListener('input',updatePreview);
+  node.querySelector('input').focus();
+  updatePreview();
+}
+function delLine(btn){
+  const wrap=document.getElementById('ed-lines-wrap');
+  if(wrap.querySelectorAll('.ed-line').length<=1){ btn.previousElementSibling.value=''; }
+  else { btn.closest('.ed-line').remove(); }
+  updatePreview();
+}
+function toggleGear(){
+  const pop=document.getElementById('ed-gearpop');
+  pop.style.display = pop.style.display==='none' ? 'block':'none';
+}
+
 function bindEditor(){
-  const ids=['ed-nombre','ed-mode','ed-visible','ed-src','ed-lines','ed-page','ed-imgmode','ed-x1','ed-y1','ed-x2','ed-y2','ed-iopa','ed-topa','ed-border','ed-bw'];
-  ids.forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener('input',onEditChange); el.addEventListener('change',onEditChange); }});
-  document.querySelectorAll('.ed-data-row input').forEach(el=>el.addEventListener('input',onEditChange));
+  ['ed-nombre','ed-adddate','ed-w','ed-h','ed-iw','ed-iopa','ed-topa','ed-border','ed-imgmode'].forEach(id=>{
+    const el=document.getElementById(id); if(el){ el.addEventListener('input',onEditChange); el.addEventListener('change',onEditChange); }
+  });
+  document.querySelectorAll('.ed-lineinput').forEach(el=>el.addEventListener('input',updatePreview));
   const drop=document.getElementById('ed-imgdrop'), file=document.getElementById('ed-imgfile');
   if(drop&&file){
     drop.onclick=()=>file.click();
-    file.onchange=()=>{ if(file.files[0]){ _editDesign._imgFile=file.files[0]; _editDesign._imgURL=URL.createObjectURL(file.files[0]); drop.textContent='Imagen: '+file.files[0].name; updatePreview(); }};
+    const take=f=>{ _editDesign._imgFile=f; _editDesign._imgURL=URL.createObjectURL(f); drop.textContent='Imagen: '+f.name; updatePreview(); };
+    file.onchange=()=>{ if(file.files[0]) take(file.files[0]); };
     ['dragover','dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.toggle('over',ev==='dragover');}));
-    drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f){ _editDesign._imgFile=f; _editDesign._imgURL=URL.createObjectURL(f); drop.textContent='Imagen: '+f.name; updatePreview(); }});
+    drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) take(f); });
   }
-  document.querySelectorAll('.ed-acc-head').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
 }
 
 function onEditChange(e){
-  const t=e.target;
-  if(t.id==='ed-visible'){ document.getElementById('ed-stampbox').style.display=t.checked?'':'none'; }
-  if(t.id==='ed-src'){ document.getElementById('ed-linesbox').style.display=t.value==='custom'?'':'none'; }
-  if(t.id==='ed-iopa'){ document.getElementById('ed-iopav').textContent=t.value+'%'; }
-  if(t.id==='ed-topa'){ document.getElementById('ed-topav').textContent=t.value+'%'; }
+  const t=e.target, g=id=>document.getElementById(id);
+  if(t.id==='ed-w') g('ed-wv').textContent=t.value;
+  if(t.id==='ed-h') g('ed-hv').textContent=t.value;
+  if(t.id==='ed-iw') g('ed-iwv').textContent=t.value+'%';
+  if(t.id==='ed-iopa') g('ed-iopav').textContent=t.value+'%';
+  if(t.id==='ed-topa') g('ed-topav').textContent=t.value+'%';
   updatePreview();
 }
 
 function collectParams(){
   const g=id=>document.getElementById(id);
-  const dataRows={};
-  document.querySelectorAll('.ed-data-row').forEach(row=>{
-    const v=row.querySelector('[data-f=value]'), a=row.querySelector('[data-f=ask]');
-    dataRows[v.dataset.k]={value:v.value, ask:a.checked};
-  });
+  const lines=[...document.querySelectorAll('.ed-lineinput')].map(i=>i.value).filter(v=>v.trim()!=='');
+  const prev=_editDesign.params||{};
   return {
-    ...dataRows,
-    mode:g('ed-mode').value,
-    visible:g('ed-visible').checked,
-    page:parseInt(g('ed-page').value)||1,
-    box:{x1:+g('ed-x1').value,y1:+g('ed-y1').value,x2:+g('ed-x2').value,y2:+g('ed-y2').value},
-    stamp_source:(g('ed-src')?g('ed-src').value:'attributes'),
-    stamp_lines:(g('ed-lines').value||'').split('\n').filter(l=>l.trim()!==''),
-    image_mode:g('ed-imgmode').value,
-    image_width:'40%',
-    image_opacity:(+g('ed-iopa').value)/100,
-    text_opacity:(+g('ed-topa').value)/100,
-    border:g('ed-border').checked,
-    border_width:+g('ed-bw').value
+    firmante:prev.firmante||{value:(window.__userName||''),ask:false},
+    reason:prev.reason||{value:'',ask:false},
+    location:prev.location||{value:'',ask:false},
+    contact:prev.contact||{value:'',ask:false},
+    mode:prev.mode||'approval',
+    visible:true,
+    page:prev.page||1,
+    stamp_source:'custom',
+    stamp_lines:lines,
+    add_date:g('ed-adddate')?g('ed-adddate').checked:true,
+    stamp_w:g('ed-w')?+g('ed-w').value:400,
+    stamp_h:g('ed-h')?+g('ed-h').value:120,
+    box:prev.box||{x1:40,y1:40,x2:440,y2:160},
+    image_mode:g('ed-imgmode')?g('ed-imgmode').value:'left',
+    image_width:(g('ed-iw')?g('ed-iw').value:40)+'%',
+    image_opacity:(g('ed-iopa')?+g('ed-iopa').value:100)/100,
+    text_opacity:(g('ed-topa')?+g('ed-topa').value:100)/100,
+    border:g('ed-border')?g('ed-border').checked:false,
+    border_width:prev.border_width||2
   };
 }
 
 function stampLines(p){
-  const src = p.stamp_source || 'attributes';
-  if(src==='custom'){
-    return (p.stamp_lines && p.stamp_lines.length) ? p.stamp_lines.slice() : ['(escribe el texto del sello)'];
-  }
-  if(src==='default'){
-    const n=(p.firmante&&p.firmante.value)?p.firmante.value:'(firmante)';
-    return ['Firmado digitalmente','por '+n, new Date().toLocaleDateString('es')];
-  }
-  // attributes: arma las lineas con los datos de la firma que tengan valor
-  const L=[];
-  if(p.firmante&&p.firmante.value) L.push(p.firmante.value);
-  if(p.reason&&p.reason.value) L.push(p.reason.value);
-  if(p.location&&p.location.value) L.push(p.location.value);
-  if(p.contact&&p.contact.value) L.push(p.contact.value);
-  L.push(new Date().toLocaleDateString('es'));
-  return L.length?L:['(datos de la firma)'];
+  const L=(p.stamp_lines&&p.stamp_lines.length)?p.stamp_lines.slice():[];
+  if(!L.length){ const n=(p.firmante&&p.firmante.value)?p.firmante.value:'(escribe una línea)'; L.push(n); }
+  if(p.add_date!==false) L.push(new Date().toLocaleDateString('es'));
+  return L;
 }
+
 function updatePreview(){
   const p=collectParams();
   const stamp=document.getElementById('ed-stamp');
   if(!stamp) return;
-  if(!p.visible){ stamp.style.display='none'; return; }
   stamp.style.display='flex';
-  stamp.style.border = p.border? `${p.border_width}px solid var(--accent)`:'none';
-  // texto del sello: SOLO lo que el usuario escribe. Sin etiquetas concatenadas.
-  // Si no hay texto, por defecto el nombre del firmante.
-  let lines = stampLines(p);
+  stamp.style.border = p.border ? `${p.border_width}px solid var(--accent)` : '1px dashed var(--line)';
+  const lines=stampLines(p);
   const hasImg=!!_editDesign._imgURL;
-  const img = hasImg? `<div class="sps-img" style="opacity:${p.image_opacity}"><img src="${_editDesign._imgURL}" style="max-width:100%;max-height:100%"></div>`:'';
+  const iw=parseInt(p.image_width)||40;
+  const img = hasImg ? `<div class="sps-img" style="opacity:${p.image_opacity};width:${iw}px"><img src="${_editDesign._imgURL}"></div>` : '';
   const txt = `<div class="sps-txt" style="opacity:${p.text_opacity}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   stamp.innerHTML = (p.image_mode==='left') ? img+txt : txt;
+  const ratio=(p.stamp_h||120)/(p.stamp_w||400);
+  stamp.style.width=Math.min(260,(p.stamp_w||400)*0.6)+'px';
+  stamp.style.minHeight=Math.min(160,(p.stamp_h||120)*0.6)+'px';
 }
 
 async function saveDesign(){
   const params=collectParams();
-  const nombre=document.getElementById('ed-nombre').value||'Sin nombre';
+  const nombre=document.getElementById('ed-nombre').value||'Mi firma';
   const es_default=document.getElementById('ed-default').checked?1:0;
-  const r=await apiPost('design_save',{id:_editDesign.id, nombre, params, es_default});
-  // (la imagen se subira en una subfase posterior: image_path)
+  await apiPost('design_save',{id:_editDesign.id, nombre, params, es_default});
   closeEditor();
   renderDisenos();
 }
