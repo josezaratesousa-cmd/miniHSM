@@ -253,7 +253,7 @@ async function openNuevo(){
   _nf.design = dz.find(d=>d.es_default) || dz[0] || null;
   let devs=[]; try{ const r=await apiGet('devices'); devs=r.items||[]; }catch(e){}
   _nf.devs=devs;
-  drawer.classList.add('wide');
+  drawer.classList.remove('wide');
   openDrawer(nuevoHTML());
   bindNuevo();
 }
