@@ -1528,3 +1528,14 @@ Base para el chip de custodia (ver DISENO_CUSTODIA_P12.md / PLAN_CUSTODIA_FASES.
   La clave de iniciacion del device (vault) queda intacta y separada.
 - CMakeLists: registrado custody_manager.
 - Pendiente Fase 2: selector credentialId en el job + vault_sign_with via custody (server+heartbeat).
+
+### CUSTODIA Fase 2 (server-side) — selector de credencial (2026-06-12)
+- /v1/signatures/pdf acepta credential_id (slot custodiado), credential_cert (PEM publico
+  del cert custodiado) y auth (blob opaco con passphrase/TOTP cifrados para el chip).
+- pades_polling.PollingSigner: si credential_id != None firma con el cert custodiado
+  (signing_cert = cert del cliente) y encola el job con credential_id + auth; si None, flujo
+  actual (cert del device dev-CA). enqueue(device,digest,credential_id,auth).
+- job_queue.enqueue y api/devices.py propagan credentialId + auth al job que recibe el chip
+  (solo si presentes -> retrocompatible: ausencia = clave de iniciacion del device).
+- Pendiente Fase 2 firmware: process_signing_job lee credentialId, descifra auth (ECIES) ->
+  passphrase, llama custody_sign y devuelve el cert custodiado.

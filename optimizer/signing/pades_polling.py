@@ -31,6 +31,7 @@ except ImportError:
 
 from minihsm import job_queue
 from signing import dev_pki
+from asn1crypto import pem as _asn1_pem, x509 as _asn1_x509
 
 POLL_INTERVAL = 2
 SIGN_TIMEOUT  = 120
@@ -62,15 +63,32 @@ def _sanitize_latin1(text):
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
-class PollingSigner(signers.Signer):
-    """pyhanko Signer que delega la firma al miniHSM por la cola de polling."""
+def _load_cert_pem(pem_data):
+    """PEM (o DER) -> asn1crypto x509.Certificate. El cert es publico."""
+    der = pem_data.encode() if isinstance(pem_data, str) else pem_data
+    if _asn1_pem.detect(der):
+        _, _, der = _asn1_pem.unarmor(der)
+    return _asn1_x509.Certificate.load(der)
 
-    def __init__(self, device_id: str):
+
+class PollingSigner(signers.Signer):
+    """pyhanko Signer que delega la firma al miniHSM por la cola de polling.
+    credential_id != None -> firma con una credencial CUSTODIADA del chip (su cert
+    publico lo aporta el cliente); el secreto (passphrase/TOTP) viaja en 'auth' opaco."""
+
+    def __init__(self, device_id: str, credential_id=None, auth=None, custody_cert_pem=None):
         self.device_id = device_id
+        self.credential_id = credential_id
+        self.auth = auth
         store = SimpleCertificateStore()
-        store.register(dev_pki.ca_cert_a1())
-        super().__init__(signing_cert=dev_pki.device_cert_a1(device_id),
-                         cert_registry=store)
+        if credential_id is not None:
+            if not custody_cert_pem:
+                raise ValueError("credential_id requiere credential_cert (PEM del cert custodiado)")
+            super().__init__(signing_cert=_load_cert_pem(custody_cert_pem), cert_registry=store)
+        else:
+            store.register(dev_pki.ca_cert_a1())
+            super().__init__(signing_cert=dev_pki.device_cert_a1(device_id),
+                             cert_registry=store)
 
     async def async_sign_raw(self, data: bytes, digest_algorithm: str,
                              dry_run: bool = False) -> bytes:
@@ -81,7 +99,7 @@ class PollingSigner(signers.Signer):
             raise NotImplementedError(
                 f"el miniHSM (curva P-256) solo soporta SHA-256; se solicito {digest_algorithm}")
         digest = hashlib.sha256(data).hexdigest()
-        rid = job_queue.enqueue(self.device_id, digest)
+        rid = job_queue.enqueue(self.device_id, digest, self.credential_id, self.auth)
         waited = 0
         while waited < SIGN_TIMEOUT:
             await asyncio.sleep(POLL_INTERVAL)
@@ -259,8 +277,12 @@ async def sign_pdf_bytes(
     tsa_url: str | None = None,          # RFC 3161 -> PAdES-T
     fill_opacity: float = 0.0,           # 0=transparente (default) .. 1=opaco
     fill_color: str = "#FFFFFF",         # color del recuadro si fill_opacity>0
+    credential_id: int | None = None,    # slot de credencial custodiada (None = clave del device)
+    credential_cert: str | None = None,  # PEM del cert custodiado (publico) si credential_id
+    auth: str | None = None,             # blob opaco (passphrase/TOTP cifrados para el chip)
 ) -> bytes:
-    signer = PollingSigner(device_id)
+    signer = PollingSigner(device_id, credential_id=credential_id,
+                           auth=auth, custody_cert_pem=credential_cert)
     w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes), strict=False)
 
     field_name = _unique_field_name(w)   # unico -> habilita firmas multiples

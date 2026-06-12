@@ -33,17 +33,21 @@ def _new_request_id() -> str:
     return "req_" + _secrets.token_hex(8)
 
 
-def enqueue(device_id: str, digest: str) -> str:
-    """Encola un trabajo de firma para un device. Devuelve el requestId."""
+def enqueue(device_id: str, digest: str, credential_id=None, auth=None) -> str:
+    """Encola un trabajo de firma para un device. Devuelve el requestId.
+    credential_id: slot de credencial custodiada (None = clave de iniciacion del device).
+    auth: blob opaco (passphrase/TOTP cifrados para el chip), transportado sin leerse."""
     rid = _new_request_id()
     with _LOCK:
         _JOBS.setdefault(device_id, {})[rid] = {
-            "requestId": rid,
-            "deviceId":  device_id,
-            "digest":    digest,
-            "status":    PENDING,
-            "result":    None,
-            "createdAt": time.time(),
+            "requestId":    rid,
+            "deviceId":     device_id,
+            "digest":       digest,
+            "credentialId": credential_id,
+            "auth":         auth,
+            "status":       PENDING,
+            "result":       None,
+            "createdAt":    time.time(),
         }
     return rid
 

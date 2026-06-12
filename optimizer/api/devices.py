@@ -94,6 +94,12 @@ def heartbeat(req: Request, body: HeartbeatRequest):
                 "ts":        ts,
                 "nonce":     nonce,
             }
+            # Fase 2: credencial custodiada (slot) + auth opaco (passphrase/TOTP cifrados
+            # para el chip). Solo se incluyen si el job los trae; ausencia = clave del device.
+            if pending.get("credentialId") is not None:
+                job_payload["credentialId"] = pending["credentialId"]
+            if pending.get("auth") is not None:
+                job_payload["auth"] = pending["auth"]
             log.info(f"Heartbeat entrega job {pending['requestId']} a {body.deviceId}")
 
     return HeartbeatResponse(
