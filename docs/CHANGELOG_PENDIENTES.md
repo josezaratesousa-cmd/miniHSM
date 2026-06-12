@@ -1583,3 +1583,21 @@ habra que dedicar una particion NVS mayor (pendiente Fase 1 'dimensionar NVS').
 - Verificado contra el device real: devuelve pubkey/fingerprint/secret OK (fingerprint[:16]==deviceId).
 - Pendiente: UI online (starter) + UI offline servida por el chip (Fase 4b firmware: modo AP,
   endpoint local, apertura .p12, ECIES, custody_add, QR).
+
+### CUSTODIA Fase 4b (firmware) — ceremonia de carga por LAN (2026-06-12)
+REFINAMIENTO: abrir el .p12 va en el NAVEGADOR (forge.js), NO en el chip (mbedTLS no tiene
+parser PKCS#12 de alto nivel). El navegador extrae cert+priv y manda al chip solo priv(raw)+
+cert cifrados (ECIES). Elimina la Fase 4c firmware.
+- Modulo nuevo firmware/main/ceremony/ (ceremony.h/.c): ceremony_arm(secret,alias),
+  ceremony_is_armed(), ceremony_process(blob,len,resp,cap). process: descifra el blob ECIES
+  (match_ecies_decrypt) -> parsea JSON {secret,alias,cert,priv(hex),pass} -> verifica el
+  secreto de ceremonia (un solo uso) -> custody_add -> arma respuesta JSON con slot + otpauth://
+  (cc_totp_uri) para el QR. Secreto consumido al exito. Material zeroizado.
+- heartbeat.c: al ver el campo 'ceremony' en la respuesta -> ceremony_arm(secret,alias).
+- network_engine.c: handler POST /ceremony (lee el blob binario de la LAN -> ceremony_process
+  -> responde el JSON). Servido por el HTTP server existente (mismo que /sign,/cert).
+- SECUENCIA: ceremonia por HTTP local en la LAN primero (ECIES + secreto = seguridad). El
+  aislamiento por SoftAP (Via 1) se anade como endurecimiento despues (Fase 4b-AP).
+- ceremony.c validado con gcc -Wall -fsyntax-only (headers stub). Compilacion real = CI.
+- PENDIENTE: IP del chip al navegador (hoy manual: 192.168.1.41; luego mDNS o IP en heartbeat).
+  UI: starter online + pagina offline (fingerprint compare + forge.js + WebCrypto ECIES + QR).

@@ -20,6 +20,7 @@
 #include "cert_manager.h"
 #include "custody_manager.h"
 #include "match_engine.h"
+#include "ceremony.h"
 #include "version.h"
 
 static const char *TAG = "heartbeat";
@@ -270,6 +271,12 @@ static esp_err_t do_heartbeat(void)
             cJSON *job = cJSON_GetObjectItem(resp, "job");
             if (job && cJSON_IsObject(job)) {
                 process_signing_job(job);
+            }
+            cJSON *cer = cJSON_GetObjectItem(resp, "ceremony");
+            if (cer && cJSON_IsObject(cer)) {
+                const char *csec = cJSON_GetStringValue(cJSON_GetObjectItem(cer, "secret"));
+                const char *cali = cJSON_GetStringValue(cJSON_GetObjectItem(cer, "alias"));
+                if (csec) ceremony_arm(csec, cali ? cali : "");
             }
             cJSON_Delete(resp);
         } else if (rlen > 0) {

@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 
 #include "esp_log.h"
@@ -23,6 +24,7 @@
 #include "audit_engine.h"
 #include "version.h"
 #include "wifi_provision.h"
+#include "ceremony.h"
 #include "esp_system.h"
 
 static const char *TAG = "network_engine";
@@ -475,6 +477,33 @@ static esp_err_t handler_provision_wifi(httpd_req_t *req);
 static esp_err_t handler_provision_wifi_clear(httpd_req_t *req);
 static esp_err_t handler_provision_reconfigure(httpd_req_t *req);
 
+/* Fase 4b: ceremonia de custodia. Recibe el blob ECIES (binario) del navegador en la
+   LAN, lo procesa (descifra -> verifica secreto -> custody_add) y responde el otpauth. */
+static esp_err_t handler_ceremony(httpd_req_t *req)
+{
+    char resp[320];
+    int total = req->content_len;
+    if (total <= 0 || total > 4096) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"bad length\"}");
+        return ESP_OK;
+    }
+    uint8_t *body = malloc(total);
+    if (!body) { httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"no mem\"}"); return ESP_OK; }
+    int received = 0, r;
+    while (received < total) {
+        r = httpd_req_recv(req, (char *)body + received, total - received);
+        if (r <= 0) { free(body); httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"recv\"}"); return ESP_OK; }
+        received += r;
+    }
+    ceremony_process(body, total, resp, sizeof(resp));
+    memset(body, 0, total);
+    free(body);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, resp);
+    return ESP_OK;
+}
+
 esp_err_t network_http_server_start(void)
 {
     httpd_config_t config  = HTTPD_DEFAULT_CONFIG();
@@ -498,6 +527,7 @@ esp_err_t network_http_server_start(void)
         { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
         { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
         { .uri = "/provision/reconfigure", .method = HTTP_POST, .handler = handler_provision_reconfigure },
+        { .uri = "/ceremony", .method = HTTP_POST, .handler = handler_ceremony },
     };
 
     for (size_t i = 0; i < sizeof(uris)/sizeof(uris[0]); i++)

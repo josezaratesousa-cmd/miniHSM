@@ -13,6 +13,7 @@ idf_component_register(
         "match_engine/match_engine.c"
         "cc_helpers/cc_helpers.c"
         "custody_manager/custody_manager.c"
+        "ceremony/ceremony.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -27,6 +28,7 @@ idf_component_register(
         "match_engine"
         "cc_helpers"
         "custody_manager"
+        "ceremony"
     REQUIRES
         nvs_flash
         esp_wifi
