@@ -116,12 +116,21 @@
               <div class="fld"><label>Imagen del sello</label><input type="file" id="simg" accept="image/*"></div>
               <div class="grid2">
                 <div class="fld" style="margin-top:0"><label>Disposición</label>
-                  <select id="imgmode"><option value="background">Fondo</option><option value="left">Imagen izq · texto der</option></select>
+                  <select id="imgmode"><option value="left">Imagen izq · texto der</option><option value="background">Fondo</option></select>
                 </div>
-                <div class="fld" style="margin-top:0"><label>Ancho imagen</label><input type="text" id="imgw" placeholder="40% o 120"></div>
+                <div class="fld" style="margin-top:0"><label>Ancho imagen</label>
+                  <div style="display:flex;gap:6px">
+                    <input type="number" id="imgwn" value="40" min="0" max="100" style="flex:1">
+                    <select id="imgwu" style="width:70px"><option value="%">%</option><option value="px">px</option></select>
+                  </div>
+                </div>
               </div>
-              <div class="rowflex"><label style="min-width:96px">Opacidad img</label><input type="range" id="opa" min="10" max="100" value="50"><span class="muted" id="opaval">50%</span></div>
+              <div class="muted"><b>100% = solo imagen</b> (sin texto) · <b>0% = solo texto</b> (sin imagen). Aplica al modo "Imagen izq".</div>
+              <div class="rowflex"><label style="min-width:96px">Opacidad img</label><input type="range" id="opa" min="0" max="100" value="50"><span class="muted" id="opaval">50%</span></div>
               <div class="rowflex"><label style="min-width:96px">Opacidad txt</label><input type="range" id="topa" min="20" max="100" value="100"><span class="muted" id="topaval">100%</span></div>
+              <div class="muted"><b>0% = transparente</b> · <b>100% = sólido</b>. La del texto atenúa su color (no traspasa la imagen).</div>
+              <div class="rowflex"><label style="min-width:96px">Opacidad fondo</label><input type="range" id="fop" min="0" max="100" value="0"><span class="muted" id="fopval">0%</span></div>
+              <div class="rowflex"><label style="min-width:96px">Color fondo</label><input type="color" id="fcol" value="#ffffff" style="width:48px;height:32px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)"><span class="muted">recuadro detrás del sello · 0% = sin fondo</span></div>
               <div class="rowflex"><label style="min-width:96px">Borde</label><input type="checkbox" id="border" checked><input type="number" id="bw" value="2" min="0" max="10" style="width:64px"><span class="muted">px</span></div>
             </div>
           </div>
@@ -187,6 +196,8 @@ $("#stampsrc").addEventListener("change",e=>$("#customtext").style.display=e.tar
 $("#tsasel").addEventListener("change",e=>$("#tsacustomrow").style.display=e.target.value==="__custom__"?"block":"none");
 $("#opa").addEventListener("input",e=>$("#opaval").textContent=e.target.value+"%");
 $("#topa").addEventListener("input",e=>$("#topaval").textContent=e.target.value+"%");
+$("#fop").addEventListener("input",e=>$("#fopval").textContent=e.target.value+"%");
+$("#imgwu").addEventListener("change",e=>{$("#imgwn").max=e.target.value==="px"?2000:100;});
 function collect(){
   const F=[]; const v=id=>$("#"+id).value;
   F.push(["file","@"+(pdf?pdf.name:"documento.pdf")]);
@@ -199,11 +210,12 @@ function collect(){
     F.push(["stamp_source",v("stampsrc")]);
     if(v("stampsrc")==="custom"&&v("stext"))F.push(["stamp_text",v("stext")]);
     F.push(["image_mode",v("imgmode")]);
-    if(v("imgw"))F.push(["image_width",v("imgw")]);
+    if(v("imgwn")!=="")F.push(["image_width",v("imgwn")+v("imgwu")]);
     F.push(["image_opacity",($("#opa").value/100).toFixed(2)]);
     F.push(["text_opacity",($("#topa").value/100).toFixed(2)]);
     F.push(["border",$("#border").checked?"true":"false"]);
     F.push(["border_width",v("bw")||0]);
+    if($("#fop").value>0){F.push(["fill_opacity",($("#fop").value/100).toFixed(2)]);F.push(["fill_color",$("#fcol").value]);}
     if($("#simg").files[0])F.push(["stamp_image","@"+$("#simg").files[0].name]);
   }
   return F;
@@ -231,11 +243,12 @@ $("#go").onclick=async()=>{
       fd.append("stamp_source",$("#stampsrc").value);
       if($("#stampsrc").value==="custom"&&$("#stext").value)fd.append("stamp_text",$("#stext").value);
       fd.append("image_mode",$("#imgmode").value);
-      if($("#imgw").value)fd.append("image_width",$("#imgw").value);
+      if($("#imgwn").value!=="")fd.append("image_width",$("#imgwn").value+$("#imgwu").value);
       fd.append("image_opacity",($("#opa").value/100).toFixed(2));
       fd.append("text_opacity",($("#topa").value/100).toFixed(2));
       fd.append("border",$("#border").checked?"true":"false");
       fd.append("border_width",$("#bw").value||0);
+      if($("#fop").value>0){fd.append("fill_opacity",($("#fop").value/100).toFixed(2));fd.append("fill_color",$("#fcol").value);}
       if($("#simg").files[0])fd.append("stamp_image",$("#simg").files[0]);
     }
     const r=await fetch(API+"/v1/signatures/pdf",{method:"POST",body:fd});

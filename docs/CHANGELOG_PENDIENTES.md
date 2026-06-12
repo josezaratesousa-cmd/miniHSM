@@ -1498,3 +1498,9 @@ R G B rg 0 0 W H re f Q' como CAPA BASE (tras el q inicial, antes de imagen/text
 opacidad real via ExtGState /FillGS (/ca,/CA). _FillTextStampStyle(frozen) override
 create_stamp. Funciona en los 3 casos (sin imagen / background / left). Verificado en
 hardware: stream con relleno como 1a capa cubriendo 0 0 W H. Muestra: descargas/sello_fill.png
+
+### Web /firmar: control de fondo del sello (fill_opacity + fill_color) (2026-06-11)
+Agregados en "Apariencia del sello": slider "Opacidad fondo" (id=fop, 0-100% -> fill_opacity
+0..1) + color picker "Color fondo" (id=fcol -> fill_color #RRGGBB). Solo se envian si la
+opacidad > 0 (default 0 = sin fondo, sin cambios). Reflejado en collect()/submit y en el
+cURL dinamico. Validado: node --check OK, HTTP 200.
