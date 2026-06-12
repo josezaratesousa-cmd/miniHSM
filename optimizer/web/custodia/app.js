@@ -198,7 +198,7 @@
         method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: blob });
       let j = null; try { j = await r.json(); } catch (_) {}
       if (j && j.ok) return j;
-      if (j && j.error && j.error.indexOf("armed") >= 0) {
+      if (j && j.error && (j.error.indexOf("armed") >= 0 || j.error.indexOf("secret") >= 0)) {
         setStatus("esperando que el chip reciba la autorización… (" + (i + 1) + ")", "warn");
         await new Promise(s => setTimeout(s, 3000)); continue;
       }
