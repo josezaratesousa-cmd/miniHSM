@@ -306,11 +306,21 @@ async function renderDisenos(){
     </div>`;
 }
 
+function stampHTML(p, imagePath, imageURL){
+  const lines = stampLines(p);
+  const bw = p.border ? (p.border_width||1) : 0;
+  const border = bw ? `${bw}px solid var(--accent)` : '1px solid transparent';
+  const imgSrc = imageURL || (imagePath ? imagePath : '');
+  const img = (imgSrc && p.image_mode!=='none')
+    ? `<div class="sps-img" style="opacity:${p.image_opacity??1}"><img src="${imgSrc}"></div>` : '';
+  const txt = `<div class="sps-txt" style="opacity:${p.text_opacity??1}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
+  const inner = (p.image_mode==='left') ? img+txt : txt;
+  return `<div class="dprev-stamp" style="border:${border}">${inner}</div>`;
+}
 function designCardHTML(x){
   const p = x.params||{};
-  const vis = p.visible;
-  const prev = vis
-    ? `<div class="dprev"><div class="dprev-stamp">${p.image_mode!=='none'&&x.image_path?'<span class="dps-img">${svg("image",16)}</span>':''}<div class="dps-lines"><span></span><span></span><span></span></div></div></div>`
+  const prev = p.visible
+    ? `<div class="dprev">${stampHTML(p, x.image_path)}</div>`
     : `<div class="dprev"><div class="dprev-none">Sin sello visible</div></div>`;
   return `<div class="design-card">
     ${prev}
@@ -395,16 +405,10 @@ function editorHTML(d){
         <label class="sw"><input type="checkbox" id="ed-visible" ${p.visible?'checked':''}> <span></span></label>
       </p>
       <div id="ed-stampbox" style="${p.visible?'':'display:none'}">
-        <div class="fld"><label>Contenido del sello</label>
-          <select id="ed-src">
-            <option value="attributes"${p.stamp_source==='attributes'?' selected':''}>Usar mis datos de firma</option>
-            <option value="custom"${custom?' selected':''}>Texto personalizado (líneas)</option>
-            <option value="default"${p.stamp_source==='default'?' selected':''}>Estándar del sistema</option>
-          </select>
-        </div>
-        <div class="fld" id="ed-linesbox" style="${custom?'':'display:none'}">
-          <label>Líneas del sello (una por línea · %(signer)s y %(ts)s disponibles)</label>
-          <textarea id="ed-lines" rows="3" placeholder="APROBADO&#10;%(signer)s&#10;%(ts)s">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
+        <div class="fld" id="ed-linesbox">
+          <label>Texto del sello (una línea por renglón)</label>
+          <textarea id="ed-lines" rows="4" placeholder="Si lo dejas vacío, se muestra el nombre del firmante.">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
+          <div class="ed-hint2">Escribe lo que quieres que se vea. Comodines: %(signer)s = firmante, %(ts)s = fecha.</div>
         </div>
         <div class="fld"><label>Imagen del sello (logo / firma)</label>
           <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':'<span style=\"font-size:20px\">${svg("upload",20)}</span> Arrastra una imagen'}</div>
@@ -440,7 +444,7 @@ function editorHTML(d){
 }
 
 function bindEditor(){
-  const ids=['ed-nombre','ed-mode','ed-visible','ed-src','ed-lines','ed-page','ed-imgmode','ed-x1','ed-y1','ed-x2','ed-y2','ed-iopa','ed-topa','ed-border','ed-bw'];
+  const ids=['ed-nombre','ed-mode','ed-visible','ed-lines','ed-page','ed-imgmode','ed-x1','ed-y1','ed-x2','ed-y2','ed-iopa','ed-topa','ed-border','ed-bw'];
   ids.forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener('input',onEditChange); el.addEventListener('change',onEditChange); }});
   document.querySelectorAll('.ed-data-row input').forEach(el=>el.addEventListener('input',onEditChange));
   const drop=document.getElementById('ed-imgdrop'), file=document.getElementById('ed-imgfile');
@@ -455,7 +459,6 @@ function bindEditor(){
 function onEditChange(e){
   const t=e.target;
   if(t.id==='ed-visible'){ document.getElementById('ed-stampbox').style.display=t.checked?'':'none'; }
-  if(t.id==='ed-src'){ document.getElementById('ed-linesbox').style.display=t.value==='custom'?'':'none'; }
   if(t.id==='ed-iopa'){ document.getElementById('ed-iopav').textContent=t.value+'%'; }
   if(t.id==='ed-topa'){ document.getElementById('ed-topav').textContent=t.value+'%'; }
   updatePreview();
@@ -474,7 +477,7 @@ function collectParams(){
     visible:g('ed-visible').checked,
     page:parseInt(g('ed-page').value)||1,
     box:{x1:+g('ed-x1').value,y1:+g('ed-y1').value,x2:+g('ed-x2').value,y2:+g('ed-y2').value},
-    stamp_source:g('ed-src').value,
+    stamp_source:'custom',
     stamp_lines:(g('ed-lines').value||'').split('\n').filter(l=>l.trim()!==''),
     image_mode:g('ed-imgmode').value,
     image_width:'40%',
@@ -485,6 +488,13 @@ function collectParams(){
   };
 }
 
+function stampLines(p){
+  // Texto personalizado tiene prioridad; los placeholders se ven literales en preview.
+  if(p.stamp_lines && p.stamp_lines.length) return p.stamp_lines.slice();
+  // Por defecto: solo el nombre del firmante (sin "Firmado por:").
+  const n = (p.firmante && p.firmante.value) ? p.firmante.value : '';
+  return n ? [n] : ['(nombre del firmante)'];
+}
 function updatePreview(){
   const p=collectParams();
   const stamp=document.getElementById('ed-stamp');
@@ -492,16 +502,9 @@ function updatePreview(){
   if(!p.visible){ stamp.style.display='none'; return; }
   stamp.style.display='flex';
   stamp.style.border = p.border? `${p.border_width}px solid var(--accent)`:'none';
-  // texto del sello segun fuente
-  let lines=[];
-  if(p.stamp_source==='custom'){ lines=p.stamp_lines.length?p.stamp_lines:['(sin texto)']; }
-  else if(p.stamp_source==='attributes'){
-    if(p.firmante.value) lines.push('Firmado por: '+p.firmante.value);
-    if(p.reason.value) lines.push('Razón: '+p.reason.value);
-    if(p.location.value) lines.push('Lugar: '+p.location.value);
-    if(p.contact.value) lines.push('Contacto: '+p.contact.value);
-    lines.push('Fecha: '+new Date().toLocaleDateString('es'));
-  } else { lines=['Firmado digitalmente','(estándar del sistema)']; }
+  // texto del sello: SOLO lo que el usuario escribe. Sin etiquetas concatenadas.
+  // Si no hay texto, por defecto el nombre del firmante.
+  let lines = stampLines(p);
   const hasImg=!!_editDesign._imgURL;
   const img = hasImg? `<div class="sps-img" style="opacity:${p.image_opacity}"><img src="${_editDesign._imgURL}" style="max-width:100%;max-height:100%"></div>`:'';
   const txt = `<div class="sps-txt" style="opacity:${p.text_opacity}">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;

@@ -195,3 +195,11 @@ a{color:inherit;text-decoration:none}
 .tl-dot .dot svg{width:13px;height:13px}
 .dps-img svg,.sps-img svg{width:18px;height:18px}
 button svg{vertical-align:-3px}
+
+/* ===== preview real del sello en cards ===== */
+.dprev-stamp{background:#fff;border-radius:4px;width:88%;min-height:58px;max-height:80px;display:flex;gap:8px;padding:8px 10px;overflow:hidden}
+.dprev-stamp .sps-img{width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.dprev-stamp .sps-img img{max-width:100%;max-height:100%}
+.dprev-stamp .sps-txt{font-size:9px;line-height:1.45;color:#1a3a5c;overflow:hidden}
+.dprev-stamp .sps-txt div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ed-hint2{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4}
