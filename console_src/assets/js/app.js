@@ -403,7 +403,7 @@ function editorHTML(d){
     <div class="ed-right">
       <div class="ed-prev-label">${svg("eye")} Así se verá tu firma</div>
       <div class="ed-sheet" id="ed-sheet">
-        <div class="sheet-lines"><span></span><span></span><span></span></div>
+        <div class="sheet-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <div class="sheet-stamp" id="ed-stamp"></div>
         <button type="button" class="stamp-gear" id="ed-gear" onclick="toggleGear()" aria-label="Ajustar el sello">${svg("settings",15)}</button>
         <div class="gear-pop" id="ed-gearpop" style="display:none">
@@ -545,8 +545,8 @@ function collectParams(){
 }
 
 function stampLines(p){
+  // Devuelve las lineas reales. Si no hay lineas NI fecha -> vacio (para que la imagen ocupe todo).
   const L=(p.stamp_lines&&p.stamp_lines.length)?p.stamp_lines.slice():[];
-  if(!L.length){ const n=(p.firmante&&p.firmante.value)?p.firmante.value:'(escribe una línea)'; L.push(n); }
   if(p.add_date!==false) L.push(new Date().toLocaleDateString('es'));
   return L;
 }
@@ -569,13 +569,17 @@ function updatePreview(){
   stamp.style.background='transparent';
 
   const lines=stampLines(p);
+  const hasText=lines.length>0;
   const txtHTML=`<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   const hasImg=!!_editDesign._imgURL;
   const imgURL=_editDesign._imgURL;
   const bgLayer=`<div class="sps-bgfill" style="position:absolute;inset:0;background:#fff;opacity:${p.bg_opacity??0}"></div>`;
 
   let content='';
-  if(hasImg && p.image_mode==='background'){
+  if(hasImg && !hasText){
+    // SIN texto: la imagen ocupa el 100% del sello, COVER (proporcion preservada aunque se corte)
+    content=`<div style="position:absolute;inset:0;background:url('${imgURL}') center/cover no-repeat"></div>`;
+  } else if(hasImg && p.image_mode==='background'){
     content=`
       <div class="sps-bgimg" style="position:absolute;inset:0;background:url('${imgURL}') center/contain no-repeat"></div>
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px">${txtHTML}</div>`;
@@ -586,8 +590,10 @@ function updatePreview(){
         <div class="sps-img" style="width:${iwPct}%;height:100%;flex-shrink:0;background:url('${imgURL}') left center/contain no-repeat"></div>
         <div style="flex:1;min-width:0">${txtHTML}</div>
       </div>`;
-  } else {
+  } else if(hasText){
     content=`<div style="position:absolute;inset:0;display:flex;align-items:center;padding:6px">${txtHTML}</div>`;
+  } else {
+    content=`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b9c4d4;font-size:9px">Agrega texto o un logo</div>`;
   }
   stamp.innerHTML=bgLayer+content;
   // FIX1: el engranaje se posiciona junto al sello (esquina superior derecha del sello)
