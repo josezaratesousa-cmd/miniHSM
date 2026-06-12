@@ -203,3 +203,27 @@ button svg{vertical-align:-3px}
 .dprev-stamp .sps-txt{font-size:9px;line-height:1.45;color:#1a3a5c;overflow:hidden}
 .dprev-stamp .sps-txt div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ed-hint2{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4}
+
+/* ===== editor v2: layout reorganizado ===== */
+.ed-right{background:var(--bg);border-left:1px solid var(--line);padding:16px;display:flex;flex-direction:column;margin-left:14px;overflow-y:auto}
+.ed-data{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+.ed-data-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.ed-section{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:12px}
+.ed-sec-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:8px}
+.ed-sec-head>span:first-child{display:flex;align-items:center;gap:7px}
+
+/* acordeones */
+.ed-acc{border:1px solid var(--line);border-radius:10px;margin-top:10px;overflow:hidden}
+.ed-acc-head{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+.ed-acc-head>span:first-child{display:flex;align-items:center;gap:7px}
+.ed-chev{transition:transform .2s;display:flex}
+.ed-acc.open .ed-chev{transform:rotate(180deg)}
+.ed-acc-body{display:none;padding:0 12px 12px}
+.ed-acc.open .ed-acc-body{display:block}
+.ed-acc.open .ed-acc-head{color:var(--ink)}
+
+/* sheet/preview mas grande */
+.ed-right .ed-sheet{flex:1;min-height:300px}
+.sheet-page{position:absolute;bottom:8px;right:12px;font-size:10px;color:var(--muted)}
+.ed-data-row input[type=text]{font-size:13px}
+@media(max-width:760px){.ed-data-grid{grid-template-columns:1fr}}

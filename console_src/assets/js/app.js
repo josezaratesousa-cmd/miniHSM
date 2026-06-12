@@ -20,6 +20,7 @@ const ICONS={
  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.9 7.9 0 0 0 0-2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.4L4.6 11a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.4z"/>',
  chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
  pencil:'<path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13 7l4 4"/>',
+ stamp:'<path d="M5 21h14M7 17h10v-2a5 5 0 0 0-3-4.6V7a2 2 0 1 0-4 0v3.4A5 5 0 0 0 7 15z"/>', chev:'<path d="M6 9l6 6 6-6"/>', layout:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
  plus:'<path d="M12 5v14M5 12h14"/>'
 };
 function svg(n,s){s=s||16;return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px">'+(ICONS[n]||ICONS.file)+'</svg>';}
@@ -385,55 +386,80 @@ function fldData(key,label,p){
 
 function editorHTML(d){
   const p=d.params;
-  const custom = p.stamp_source==='custom';
+  const src = p.stamp_source || 'attributes';
   return `
   <div class="drawer-head"><span class="dh-title">${svg("pencil")} ${d.id?'Editar':'Nuevo'} diseño</span><button class="dh-close" onclick="closeEditor()">&times;</button></div>
   <div class="editor">
+
     <div class="ed-form">
       <div class="fld"><label>Nombre del diseño</label><input type="text" id="ed-nombre" value="${esc(d.nombre)}"></div>
 
-      <p class="ed-group">DATOS DE LA FIRMA <span class="ed-hint">(✓ pedir = se solicita al firmar)</span></p>
-      ${fldData('firmante','Firmante',p)}
-      ${fldData('reason','Razón',p)}
-      ${fldData('location','Lugar',p)}
-      ${fldData('contact','Contacto',p)}
-      <div class="fld" style="margin-top:8px"><label>Modo de firma</label>
-        <select id="ed-mode"><option value="approval"${p.mode==='approval'?' selected':''}>Aprobación — permite más firmas</option><option value="certify"${p.mode==='certify'?' selected':''}>Certificación — sella</option></select>
+      <div class="ed-section">
+        <div class="ed-sec-head"><span>${svg("stamp")} Sello visible</span>
+          <label class="sw"><input type="checkbox" id="ed-visible" ${p.visible?'checked':''}> <span></span></label>
+        </div>
+        <div id="ed-stampbox" style="${p.visible?'':'display:none'}">
+          <div class="fld"><label>Contenido del sello</label>
+            <select id="ed-src">
+              <option value="attributes"${src==='attributes'?' selected':''}>Atributos — usa los datos de la firma</option>
+              <option value="default"${src==='default'?' selected':''}>Estándar — texto del sistema</option>
+              <option value="custom"${src==='custom'?' selected':''}>Personalizado — tú escribes el texto</option>
+            </select>
+          </div>
+          <div class="fld" id="ed-linesbox" style="${src==='custom'?'':'display:none'}">
+            <label>Texto del sello (una línea por renglón)</label>
+            <textarea id="ed-lines" rows="3" placeholder="Firmado por %(signer)s&#10;Fecha: %(ts)s">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
+            <div class="ed-hint2">Comodines: %(signer)s = firmante · %(ts)s = fecha.</div>
+          </div>
+        </div>
       </div>
 
-      <p class="ed-group" style="display:flex;align-items:center;justify-content:space-between">SELLO VISIBLE
-        <label class="sw"><input type="checkbox" id="ed-visible" ${p.visible?'checked':''}> <span></span></label>
-      </p>
-      <div id="ed-stampbox" style="${p.visible?'':'display:none'}">
-        <div class="fld" id="ed-linesbox">
-          <label>Texto del sello (una línea por renglón)</label>
-          <textarea id="ed-lines" rows="4" placeholder="Si lo dejas vacío, se muestra el nombre del firmante.">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
-          <div class="ed-hint2">Escribe lo que quieres que se vea. Comodines: %(signer)s = firmante, %(ts)s = fecha.</div>
-        </div>
-        <div class="fld"><label>Imagen del sello (logo / firma)</label>
-          <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':'<span style=\"font-size:20px\">${svg("upload",20)}</span> Arrastra una imagen'}</div>
-          <input type="file" id="ed-imgfile" accept="image/*" hidden>
-        </div>
-        <div class="grid2-e">
-          <div class="fld"><label>Página</label><input type="number" id="ed-page" value="${p.page||1}" min="1"></div>
+      <div class="ed-acc" data-acc="img">
+        <div class="ed-acc-head"><span>${svg("image")} Imagen y estilo</span><span class="ed-chev">${svg("chev")}</span></div>
+        <div class="ed-acc-body">
+          <div class="fld"><label>Imagen del sello (logo / firma)</label>
+            <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':svg("upload",18)+' Arrastra una imagen'}</div>
+            <input type="file" id="ed-imgfile" accept="image/*" hidden>
+          </div>
           <div class="fld"><label>Disposición</label><select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen izq · texto der</option><option value="background"${p.image_mode==='background'?' selected':''}>Fondo</option></select></div>
+          <div class="rng"><label>Opacidad imagen</label><input type="range" id="ed-iopa" min="0" max="100" value="${Math.round((p.image_opacity??.5)*100)}"><span id="ed-iopav">${Math.round((p.image_opacity??.5)*100)}%</span></div>
+          <div class="rng"><label>Opacidad texto</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
+          <div class="rng"><label>Borde</label><input type="checkbox" id="ed-border" ${p.border?'checked':''}><input type="number" id="ed-bw" value="${p.border_width||2}" min="0" max="10" style="width:54px"><span class="muted2">px</span></div>
         </div>
-        <div class="fld"><label>Posición en página (x1,y1,x2,y2)</label>
-          <div class="coords4"><input type="number" id="ed-x1" value="${p.box.x1}"><input type="number" id="ed-y1" value="${p.box.y1}"><input type="number" id="ed-x2" value="${p.box.x2}"><input type="number" id="ed-y2" value="${p.box.y2}"></div>
+      </div>
+
+      <div class="ed-acc" data-acc="pos">
+        <div class="ed-acc-head"><span>${svg("layout")} Posición</span><span class="ed-chev">${svg("chev")}</span></div>
+        <div class="ed-acc-body">
+          <div class="fld"><label>Página</label><input type="number" id="ed-page" value="${p.page||1}" min="1"></div>
+          <div class="fld"><label>Coordenadas (x1,y1,x2,y2)</label>
+            <div class="coords4"><input type="number" id="ed-x1" value="${p.box.x1}"><input type="number" id="ed-y1" value="${p.box.y1}"><input type="number" id="ed-x2" value="${p.box.x2}"><input type="number" id="ed-y2" value="${p.box.y2}"></div>
+          </div>
         </div>
-        <div class="rng"><label>Opacidad imagen</label><input type="range" id="ed-iopa" min="0" max="100" value="${Math.round((p.image_opacity??.5)*100)}"><span id="ed-iopav">${Math.round((p.image_opacity??.5)*100)}%</span></div>
-        <div class="rng"><label>Opacidad texto</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
-        <div class="rng"><label>Borde</label><input type="checkbox" id="ed-border" ${p.border?'checked':''}><input type="number" id="ed-bw" value="${p.border_width||2}" min="0" max="10" style="width:54px"><span class="muted2">px</span></div>
       </div>
 
       <label class="ed-defcheck"><input type="checkbox" id="ed-default" ${d.es_default?'checked':''}> Usar como predeterminado</label>
     </div>
 
-    <div class="ed-preview">
-      <div class="ed-prev-label">${svg("eye")} Vista previa</div>
+    <div class="ed-right">
+      <div class="ed-data">
+        <p class="ed-group">DATOS DE LA FIRMA <span class="ed-hint">(✓ pedir = se solicita al firmar)</span></p>
+        <div class="ed-data-grid">
+          ${fldData('firmante','Firmante',p)}
+          ${fldData('reason','Razón',p)}
+          ${fldData('location','Lugar',p)}
+          ${fldData('contact','Contacto',p)}
+        </div>
+        <div class="fld" style="margin-top:6px"><label>Modo de firma</label>
+          <select id="ed-mode"><option value="approval"${p.mode==='approval'?' selected':''}>Aprobación — permite más firmas</option><option value="certify"${p.mode==='certify'?' selected':''}>Certificación — sella</option></select>
+        </div>
+      </div>
+
+      <div class="ed-prev-label">${svg("eye")} Así se verá en el documento</div>
       <div class="ed-sheet" id="ed-sheet">
         <div class="sheet-lines"><span></span><span></span><span></span><span></span></div>
         <div class="sheet-stamp" id="ed-stamp"></div>
+        <div class="sheet-page" id="ed-pagelbl">página 1</div>
       </div>
       <div class="ed-prev-actions">
         <button class="btn" onclick="saveDesign()">${svg("save")} Guardar diseño</button>
@@ -444,7 +470,7 @@ function editorHTML(d){
 }
 
 function bindEditor(){
-  const ids=['ed-nombre','ed-mode','ed-visible','ed-lines','ed-page','ed-imgmode','ed-x1','ed-y1','ed-x2','ed-y2','ed-iopa','ed-topa','ed-border','ed-bw'];
+  const ids=['ed-nombre','ed-mode','ed-visible','ed-src','ed-lines','ed-page','ed-imgmode','ed-x1','ed-y1','ed-x2','ed-y2','ed-iopa','ed-topa','ed-border','ed-bw'];
   ids.forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener('input',onEditChange); el.addEventListener('change',onEditChange); }});
   document.querySelectorAll('.ed-data-row input').forEach(el=>el.addEventListener('input',onEditChange));
   const drop=document.getElementById('ed-imgdrop'), file=document.getElementById('ed-imgfile');
@@ -454,11 +480,13 @@ function bindEditor(){
     ['dragover','dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.toggle('over',ev==='dragover');}));
     drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f){ _editDesign._imgFile=f; _editDesign._imgURL=URL.createObjectURL(f); drop.textContent='Imagen: '+f.name; updatePreview(); }});
   }
+  document.querySelectorAll('.ed-acc-head').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
 }
 
 function onEditChange(e){
   const t=e.target;
   if(t.id==='ed-visible'){ document.getElementById('ed-stampbox').style.display=t.checked?'':'none'; }
+  if(t.id==='ed-src'){ document.getElementById('ed-linesbox').style.display=t.value==='custom'?'':'none'; }
   if(t.id==='ed-iopa'){ document.getElementById('ed-iopav').textContent=t.value+'%'; }
   if(t.id==='ed-topa'){ document.getElementById('ed-topav').textContent=t.value+'%'; }
   updatePreview();
@@ -477,7 +505,7 @@ function collectParams(){
     visible:g('ed-visible').checked,
     page:parseInt(g('ed-page').value)||1,
     box:{x1:+g('ed-x1').value,y1:+g('ed-y1').value,x2:+g('ed-x2').value,y2:+g('ed-y2').value},
-    stamp_source:'custom',
+    stamp_source:(g('ed-src')?g('ed-src').value:'attributes'),
     stamp_lines:(g('ed-lines').value||'').split('\n').filter(l=>l.trim()!==''),
     image_mode:g('ed-imgmode').value,
     image_width:'40%',
@@ -489,11 +517,22 @@ function collectParams(){
 }
 
 function stampLines(p){
-  // Texto personalizado tiene prioridad; los placeholders se ven literales en preview.
-  if(p.stamp_lines && p.stamp_lines.length) return p.stamp_lines.slice();
-  // Por defecto: solo el nombre del firmante (sin "Firmado por:").
-  const n = (p.firmante && p.firmante.value) ? p.firmante.value : '';
-  return n ? [n] : ['(nombre del firmante)'];
+  const src = p.stamp_source || 'attributes';
+  if(src==='custom'){
+    return (p.stamp_lines && p.stamp_lines.length) ? p.stamp_lines.slice() : ['(escribe el texto del sello)'];
+  }
+  if(src==='default'){
+    const n=(p.firmante&&p.firmante.value)?p.firmante.value:'(firmante)';
+    return ['Firmado digitalmente','por '+n, new Date().toLocaleDateString('es')];
+  }
+  // attributes: arma las lineas con los datos de la firma que tengan valor
+  const L=[];
+  if(p.firmante&&p.firmante.value) L.push(p.firmante.value);
+  if(p.reason&&p.reason.value) L.push(p.reason.value);
+  if(p.location&&p.location.value) L.push(p.location.value);
+  if(p.contact&&p.contact.value) L.push(p.contact.value);
+  L.push(new Date().toLocaleDateString('es'));
+  return L.length?L:['(datos de la firma)'];
 }
 function updatePreview(){
   const p=collectParams();
