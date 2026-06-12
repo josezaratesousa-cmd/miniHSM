@@ -1,5 +1,31 @@
 'use strict';
 const API = '/app/api.php';
+const ICONS={
+ check:'<path d="M5 12l5 5L20 7"/>',
+ x:'<path d="M6 6l12 12M18 6L6 18"/>',
+ 'file-x':'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10 14l4 4M14 14l-4 4"/>',
+ 'file-check':'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 15l2 2 3-3"/>',
+ file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+ send:'<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+ copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+ eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+ save:'<path d="M5 3h12l4 4v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M7 3v6h8V3M7 21v-6h10v6"/>',
+ id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M14 9h4M14 13h4M6 16h7"/>',
+ upload:'<path d="M12 15V4M8 8l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/>',
+ device:'<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+ image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+ trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+ download:'<path d="M12 4v11M8 11l4 4 4-4"/><path d="M4 19h16"/>',
+ info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.9 7.9 0 0 0 0-2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.4L4.6 11a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.4z"/>',
+ chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+ pencil:'<path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13 7l4 4"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>'
+};
+function svg(n,s){s=s||16;return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px">'+(ICONS[n]||ICONS.file)+'</svg>';}
+
+const SUN_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>';
+const MOON_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>';
 
 /* ---------- Tema claro/oscuro (recordado en localStorage) ---------- */
 (function initTheme(){
@@ -9,7 +35,7 @@ const API = '/app/api.php';
 function applyThemeIcon(){
   var dark = document.documentElement.getAttribute('data-theme') === 'dark';
   var btn = document.getElementById('themeToggle');
-  if (btn) btn.innerHTML = dark ? '\u2600' : '\u263e';
+  if (btn) btn.innerHTML = dark ? SUN_SVG : MOON_SVG;
 }
 document.addEventListener('DOMContentLoaded', function(){
   applyThemeIcon();
@@ -101,7 +127,7 @@ async function renderBandeja(view){
   catch(e){ main.innerHTML = `<div class="empty">Error al cargar: ${esc(e.message)}</div>`; return; }
 
   const rows = data.items.map(it => rowHTML(it, view, cfg)).join('');
-  const nuevoBtn = view==='pendientes' ? `<button class="btn sm" id="btnNuevo">&#9998; Nuevo</button>` : '';
+  const nuevoBtn = view==='pendientes' ? `<button class="btn sm" id="btnNuevo">${svg("pencil")} Nuevo</button>` : '';
   main.innerHTML = `
     <div class="view-head">
       <div class="view-title">${cfg.titulo} <span class="badge-n">${data.items.length}</span></div>
@@ -123,13 +149,13 @@ function rowHTML(it, view, cfg){
   if (view==='pendientes'){
     action = it.estado==='entregado'
       ? `<span class="badge cola">En cola</span>`
-      : `<button class="btn sm" onclick="event.stopPropagation();signDoc(${it.id})">Firmar</button><button class="btn sm danger" onclick="event.stopPropagation();rejectDoc(${it.id})">&#10007;</button>`;
+      : `<button class="btn sm" onclick="event.stopPropagation();signDoc(${it.id})">Firmar</button><button class="btn sm danger" onclick="event.stopPropagation();rejectDoc(${it.id})">${svg("x")}</button>`;
   } else if (view==='firmados'){
-    action = `<button class="btn sm ghost" onclick="event.stopPropagation();dl(${it.id})">&#8595;</button>`;
+    action = `<button class="btn sm ghost" onclick="event.stopPropagation();dl(${it.id})">${svg("download")}</button>`;
   } else {
     action = `<span class="badge" title="${esc(it.motivo_rechazo||'')}">motivo</span>`;
   }
-  const icon = view==='firmados'?'&#9989;':(view==='rechazados'?'&#10060;':'&#128196;');
+  const icon = view==='firmados'?svg("file-check",18):(view==='rechazados'?svg("file-x",18):svg("file",18));
   return `<div class="list-row" data-id="${it.id}">
     <span class="ico-doc">${icon}</span>
     <div class="lr-doc"><div class="lr-name">${esc(it.filename)}</div><div class="lr-origin">${esc(it.origen||'')}</div></div>
@@ -171,7 +197,7 @@ async function openDetalle(id){
       <div class="tab" data-tab="traza">Trazabilidad <span class="tab-n">${ev.length}</span></div>
     </div>
     <div id="tab-doc">
-      <div class="preview-box"><span style="font-size:38px">&#128196;</span><span>Vista previa del PDF</span><span style="font-size:11px">${it.pages||'—'} página(s)</span></div>
+      <div class="preview-box"><span style="font-size:38px">${svg("file",18)}</span><span>Vista previa del PDF</span><span style="font-size:11px">${it.pages||'—'} página(s)</span></div>
       <div style="display:flex;gap:8px;margin-top:14px">${detailActions(it)}</div>
     </div>
     <div id="tab-traza" style="display:none">${timelineHTML(ev)}</div>`;
@@ -184,14 +210,14 @@ async function openDetalle(id){
 }
 
 function detailActions(it){
-  if (it.estado==='pendiente') return `<button class="btn" onclick="signDoc(${it.id})">&#9998; Firmar</button><button class="btn danger" onclick="rejectDoc(${it.id})">&#10007; Rechazar</button>`;
-  if (it.estado==='firmado')   return `<button class="btn ghost" onclick="dl(${it.id})">&#8595; Descargar firmado</button>`;
+  if (it.estado==='pendiente') return `<button class="btn" onclick="signDoc(${it.id})">${svg("pencil")} Firmar</button><button class="btn danger" onclick="rejectDoc(${it.id})">${svg("x")} Rechazar</button>`;
+  if (it.estado==='firmado')   return `<button class="btn ghost" onclick="dl(${it.id})">${svg("download")} Descargar firmado</button>`;
   if (it.estado==='rechazado') return `<div class="tl-date">Motivo: ${esc(it.motivo_rechazo||'—')}</div>`;
   return `<span class="badge cola">En cola</span>`;
 }
 
 function timelineHTML(ev){
-  const meta = {enviado:['&#10148;','Enviado a firmar',''],abierto:['&#128065;','Abierto / revisado',''],procesado:['&#9881;','Procesado por el dispositivo',''],firmado:['&#10003;','Firmado','ok'],rechazado:['&#10007;','Rechazado','bad']};
+  const meta = {enviado:[svg("send"),'Enviado a firmar',''],abierto:[svg("eye"),'Abierto / revisado',''],procesado:[svg("settings",20),'Procesado por el dispositivo',''],firmado:[svg("check"),'Firmado','ok'],rechazado:[svg("x"),'Rechazado','bad']};
   if(!ev.length) return `<div class="empty">Sin eventos aún.</div>`;
   return ev.map((e,i)=>{
     const m = meta[e.tipo]||['&#8226;',e.tipo,''];
@@ -206,19 +232,19 @@ function timelineHTML(ev){
 /* ---------- Nueva firma (placeholder de form; encolado en fase siguiente) ---------- */
 function openNuevo(){
   openDrawer(`
-    <div class="drawer-head"><span class="dh-title">&#9998; Nueva firma</span><button class="dh-close" onclick="closeDrawer()">&times;</button></div>
+    <div class="drawer-head"><span class="dh-title">${svg("pencil")} Nueva firma</span><button class="dh-close" onclick="closeDrawer()">&times;</button></div>
     <div class="fld"><label>Dispositivo / identidad</label><select id="nf-dev"><option>Mi firma personal (fe4dfede…)</option></select></div>
-    <div class="fld"><label>Documento</label><div class="dropzone" id="nf-drop"><span style="font-size:26px">&#128228;</span><br>Arrastra el PDF aquí o haz clic</div></div>
+    <div class="fld"><label>Documento</label><div class="dropzone" id="nf-drop"><span style="font-size:26px">${svg("upload",20)}</span><br>Arrastra el PDF aquí o haz clic</div></div>
     <div class="fld"><label>Motivo (opcional)</label><input type="text" placeholder="Aprobación"></div>
-    <div class="tl-date" style="margin-bottom:14px">&#9432; Usará tus preferencias guardadas</div>
-    <div style="display:flex;gap:8px"><button class="btn" onclick="alert('Encolado: pendiente de implementar en la siguiente subfase')">&#10148; Enviar a firmar</button><button class="btn ghost" onclick="closeDrawer()">Cancelar</button></div>`);
+    <div class="tl-date" style="margin-bottom:14px">${svg("info")} Usará tus preferencias guardadas</div>
+    <div style="display:flex;gap:8px"><button class="btn" onclick="alert('Encolado: pendiente de implementar en la siguiente subfase')">${svg("send")} Enviar a firmar</button><button class="btn ghost" onclick="closeDrawer()">Cancelar</button></div>`);
 }
 
 /* ---------- Dispositivos ---------- */
 async function renderDispositivos(){
   main.innerHTML = `<div class="main-loading">Cargando…</div>`;
   let d; try{ d = await apiGet('devices'); }catch(e){ main.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; return; }
-  const rows = d.items.map(x=>`<div class="list-row"><span class="ico-doc">&#128241;</span>
+  const rows = d.items.map(x=>`<div class="list-row"><span class="ico-doc">${svg("device",20)}</span>
     <div class="lr-doc"><div class="lr-name">${esc(x.alias||x.device_id)}</div><div class="lr-origin">${esc(x.device_id)} · ${esc(x.firmware||'')}</div></div>
     <span></span><span></span><span class="lr-meta">${esc(x.estado)}</span>
     <span class="lr-actions"><span class="badge ${x.online?'':'cola'}">${x.online?'En línea':'Dormido'}</span></span></div>`).join('');
@@ -242,19 +268,19 @@ function renderPreferencias(){
     <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Configura una vez y reutiliza en cada firma.</p>
     <div class="pref-cards">
       <div class="pref-card" id="card-disenos">
-        <div class="pc-ico" style="background:rgba(77,184,255,.12);color:var(--accent)">&#9998;</div>
+        <div class="pc-ico" style="background:rgba(77,184,255,.12);color:var(--accent)">${svg("pencil")}</div>
         <div class="pc-title">Diseño de firmas</div>
         <div class="pc-desc">Apariencia del sello visible: datos, imagen, posición.</div>
         <div class="pc-foot"><span class="badge" id="pc-count">…</span><span style="margin-left:auto">&rarr;</span></div>
       </div>
       <div class="pref-card" style="opacity:.6">
-        <div class="pc-ico">&#128203;</div>
+        <div class="pc-ico">${svg("id",20)}</div>
         <div class="pc-title">Datos de firmante</div>
         <div class="pc-desc">Nombre, razón, lugar y contacto por defecto.</div>
         <div class="pc-foot"><span style="color:var(--muted);font-size:12px">Próximamente</span></div>
       </div>
       <div class="pref-card" style="opacity:.6">
-        <div class="pc-ico">&#128340;</div>
+        <div class="pc-ico">${svg("settings",20)}</div>
         <div class="pc-title">Sellado de tiempo</div>
         <div class="pc-desc">Definido por tu organización (TSA del tenant).</div>
         <div class="pc-foot"><span class="badge">Solo lectura</span></div>
@@ -284,16 +310,16 @@ function designCardHTML(x){
   const p = x.params||{};
   const vis = p.visible;
   const prev = vis
-    ? `<div class="dprev"><div class="dprev-stamp">${p.image_mode!=='none'&&x.image_path?'<span class="dps-img">&#128247;</span>':''}<div class="dps-lines"><span></span><span></span><span></span></div></div></div>`
+    ? `<div class="dprev"><div class="dprev-stamp">${p.image_mode!=='none'&&x.image_path?'<span class="dps-img">${svg("image",16)}</span>':''}<div class="dps-lines"><span></span><span></span><span></span></div></div></div>`
     : `<div class="dprev"><div class="dprev-none">Sin sello visible</div></div>`;
   return `<div class="design-card">
     ${prev}
     <div class="dc-body">
       <div class="dc-head"><span class="dc-name">${esc(x.nombre)}</span>${x.es_default?'<span class="badge-def">Predeterminado</span>':''}</div>
       <div class="dc-actions">
-        <button class="btn sm ghost" onclick="openEditor(${x.id})">&#9998; Editar</button>
-        <button class="btn sm ghost" onclick="dupDesign(${x.id})" title="Duplicar">&#10697;</button>
-        <button class="btn sm ghost" onclick="delDesign(${x.id})" title="Eliminar">&#128465;</button>
+        <button class="btn sm ghost" onclick="openEditor(${x.id})">${svg("pencil")} Editar</button>
+        <button class="btn sm ghost" onclick="dupDesign(${x.id})" title="Duplicar">${svg("copy")}</button>
+        <button class="btn sm ghost" onclick="delDesign(${x.id})" title="Eliminar">${svg("trash")}</button>
       </div>
     </div>
   </div>`;
@@ -351,7 +377,7 @@ function editorHTML(d){
   const p=d.params;
   const custom = p.stamp_source==='custom';
   return `
-  <div class="drawer-head"><span class="dh-title">&#9998; ${d.id?'Editar':'Nuevo'} diseño</span><button class="dh-close" onclick="closeEditor()">&times;</button></div>
+  <div class="drawer-head"><span class="dh-title">${svg("pencil")} ${d.id?'Editar':'Nuevo'} diseño</span><button class="dh-close" onclick="closeEditor()">&times;</button></div>
   <div class="editor">
     <div class="ed-form">
       <div class="fld"><label>Nombre del diseño</label><input type="text" id="ed-nombre" value="${esc(d.nombre)}"></div>
@@ -381,7 +407,7 @@ function editorHTML(d){
           <textarea id="ed-lines" rows="3" placeholder="APROBADO&#10;%(signer)s&#10;%(ts)s">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
         </div>
         <div class="fld"><label>Imagen del sello (logo / firma)</label>
-          <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':'<span style=\"font-size:20px\">&#128228;</span> Arrastra una imagen'}</div>
+          <div class="dropzone" id="ed-imgdrop">${d.image_path?'Imagen cargada · clic para cambiar':'<span style=\"font-size:20px\">${svg("upload",20)}</span> Arrastra una imagen'}</div>
           <input type="file" id="ed-imgfile" accept="image/*" hidden>
         </div>
         <div class="grid2-e">
@@ -400,13 +426,13 @@ function editorHTML(d){
     </div>
 
     <div class="ed-preview">
-      <div class="ed-prev-label">&#128065; Vista previa</div>
+      <div class="ed-prev-label">${svg("eye")} Vista previa</div>
       <div class="ed-sheet" id="ed-sheet">
         <div class="sheet-lines"><span></span><span></span><span></span><span></span></div>
         <div class="sheet-stamp" id="ed-stamp"></div>
       </div>
       <div class="ed-prev-actions">
-        <button class="btn" onclick="saveDesign()">&#128190; Guardar diseño</button>
+        <button class="btn" onclick="saveDesign()">${svg("save")} Guardar diseño</button>
         <button class="btn ghost" onclick="closeEditor()">Cancelar</button>
       </div>
     </div>

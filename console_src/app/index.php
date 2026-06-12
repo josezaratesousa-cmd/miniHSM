@@ -1,6 +1,7 @@
 <?php
 /* Xami · Panel de usuario (inbox) — shell */
 require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/icons.php';
 $u = auth_require();
 ?>
 <!DOCTYPE html>
@@ -20,15 +21,15 @@ $u = auth_require();
   <header class="topbar">
     <div class="tb-left">
       <button id="toggleSidebar" class="icon-btn" title="Mostrar/ocultar menú" aria-label="Menú">&#9776;</button>
-      <a class="brand" href="/app/"><span class="brand-mark">&#128274;</span> Xami</a>
+      <a class="brand" href="/app/"><span class="brand-mark"><?=ic("shield",20)?></span> Xami</a>
     </div>
     <div class="tb-right">
-      <button id="themeToggle" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema">&#9790;</button>
-      <button class="icon-btn" title="Notificaciones" aria-label="Notificaciones">&#128276;</button>
+      <button id="themeToggle" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema"><?=ic("moon",18)?></button>
+      <button class="icon-btn" title="Notificaciones" aria-label="Notificaciones"><?=ic("bell",18)?></button>
       <div class="profile">
         <?php $em = $u['email'] ?? 'usuario@xami.run'; $ini = strtoupper(substr($em,0,2)); ?><span class="avatar"><?= htmlspecialchars($ini) ?></span>
         <span class="profile-email"><?= htmlspecialchars(explode('@', $em)[0]) ?></span>
-        <a class="logout" href="/logout.php" title="Salir">&#9211;</a>
+        <a class="logout" href="/logout.php" title="Salir"><?=ic("power",18)?></a>
       </div>
     </div>
   </header>
@@ -38,23 +39,23 @@ $u = auth_require();
       <nav>
         <p class="nav-group">INBOX</p>
         <a class="nav-item active" data-view="pendientes" href="#pendientes">
-          <span class="ni-ico">&#128338;</span><span class="ni-txt">Pendientes</span><span class="ni-count" id="c-pendientes">0</span>
+          <span class="ni-ico"><?=ic("clock")?></span><span class="ni-txt">Pendientes</span><span class="ni-count" id="c-pendientes">0</span>
         </a>
         <a class="nav-item" data-view="firmados" href="#firmados">
-          <span class="ni-ico">&#10003;</span><span class="ni-txt">Firmados</span><span class="ni-count" id="c-firmados">0</span>
+          <span class="ni-ico"><?=ic("check")?></span><span class="ni-txt">Firmados</span><span class="ni-count" id="c-firmados">0</span>
         </a>
         <a class="nav-item" data-view="rechazados" href="#rechazados">
-          <span class="ni-ico">&#10007;</span><span class="ni-txt">Rechazados</span><span class="ni-count" id="c-rechazados">0</span>
+          <span class="ni-ico"><?=ic("x")?></span><span class="ni-txt">Rechazados</span><span class="ni-count" id="c-rechazados">0</span>
         </a>
         <p class="nav-group">CONFIGURACIÓN</p>
         <a class="nav-item" data-view="dispositivos" href="#dispositivos">
-          <span class="ni-ico">&#128241;</span><span class="ni-txt">Mis dispositivos</span>
+          <span class="ni-ico"><?=ic("device")?></span><span class="ni-txt">Mis dispositivos</span>
         </a>
         <a class="nav-item" data-view="preferencias" href="#preferencias">
-          <span class="ni-ico">&#9881;</span><span class="ni-txt">Mis preferencias</span>
+          <span class="ni-ico"><?=ic("settings")?></span><span class="ni-txt">Mis preferencias</span>
         </a>
         <a class="nav-item" data-view="consumo" href="#consumo">
-          <span class="ni-ico">&#128202;</span><span class="ni-txt">Mi consumo</span>
+          <span class="ni-ico"><?=ic("chart")?></span><span class="ni-txt">Mi consumo</span>
         </a>
       </nav>
       <div class="resizer" id="resizer" title="Arrastra para redimensionar"></div>
