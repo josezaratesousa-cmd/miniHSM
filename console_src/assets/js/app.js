@@ -313,7 +313,7 @@ function stampHTML(p, imagePath, imageURL){
   const bw = p.border ? (p.border_width||1) : 0;
   const border = bw ? `${bw}px solid var(--accent)` : '1px solid #e3e9f2';
   const imgSrc = imageURL || imagePath || '';
-  const bg = `<div style="position:absolute;inset:0;background:#fff;opacity:${p.bg_opacity??0}"></div>`;
+  const bg = `<div style="position:absolute;inset:0;background:#fff;opacity:${p.fill_opacity??0}"></div>`;
   const txt = `<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   let inner;
   if(imgSrc && !hasText){
@@ -386,7 +386,7 @@ function defaultParams(){
     add_date:true,
     stamp_w:400, stamp_h:120,
     image_mode:'left', image_width:'40%',
-    image_opacity:1.0, text_opacity:1.0, bg_opacity:0.0,
+    image_opacity:1.0, text_opacity:1.0, fill_opacity:0.0,
     border:false, border_width:2
   };
 }
@@ -425,7 +425,7 @@ function editorHTML(d){
           <div class="rng"><label>Ancho</label><input type="range" id="ed-w" min="120" max="520" value="${p.stamp_w||400}"><span id="ed-wv">${p.stamp_w||400}</span></div>
           <div class="rng"><label>Alto</label><input type="range" id="ed-h" min="60" max="300" value="${p.stamp_h||120}"><span id="ed-hv">${p.stamp_h||120}</span></div>
           <div class="rng"><label>Tam. imagen</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
-          <div class="rng"><label>Op. fondo</label><input type="range" id="ed-bopa" min="0" max="100" value="${Math.round((p.bg_opacity??0)*100)}"><span id="ed-bopav">${Math.round((p.bg_opacity??0)*100)}%</span></div>
+          <div class="rng"><label>Op. fondo</label><input type="range" id="ed-bopa" min="0" max="100" value="${Math.round((p.fill_opacity??0)*100)}"><span id="ed-bopav">${Math.round((p.fill_opacity??0)*100)}%</span></div>
           <div class="gear-row"><span class="gr-label">Disposición</span><select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select></div>
           <div class="gear-row"><label class="gr-check"><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
             <span id="ed-bwrow" style="${p.border?'':'display:none'};display:inline-flex;align-items:center;gap:5px"><input type="number" id="ed-bw" min="0" max="10" value="${p.border_width||2}" style="width:50px"><span class="muted2">px</span></span>
@@ -552,7 +552,7 @@ function collectParams(){
     image_width:(g('ed-iw')?g('ed-iw').value:40)+'%',
     image_opacity:1.0,
     text_opacity:1.0,
-    bg_opacity:(g('ed-bopa')?+g('ed-bopa').value:0)/100,
+    fill_opacity:(g('ed-bopa')?+g('ed-bopa').value:0)/100,
     border:g('ed-border')?g('ed-border').checked:false,
     border_width:g('ed-bw')?+g('ed-bw').value:(prev.border_width||2)
   };
@@ -579,7 +579,7 @@ function updatePreview(){
   stamp.style.overflow='hidden';
   stamp.style.padding='0';
   // El FONDO del sello lleva la opacidad (como hara el API): recuadro blanco semitransparente.
-  // bg_opacity = opacidad del fondo. 0 = transparente (se ve el documento), 1 = blanco solido.
+  // fill_opacity = opacidad del fondo. 0 = transparente (se ve el documento), 1 = blanco solido.
   stamp.style.background='transparent';
 
   const lines=stampLines(p);
@@ -587,7 +587,7 @@ function updatePreview(){
   const txtHTML=`<div class="sps-txt" style="color:#000">${lines.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
   const hasImg=!!_editDesign._imgURL;
   const imgURL=_editDesign._imgURL;
-  const bgLayer=`<div class="sps-bgfill" style="position:absolute;inset:0;background:#fff;opacity:${p.bg_opacity??0}"></div>`;
+  const bgLayer=`<div class="sps-bgfill" style="position:absolute;inset:0;background:#fff;opacity:${p.fill_opacity??0}"></div>`;
 
   let content='';
   if(hasImg && !hasText){

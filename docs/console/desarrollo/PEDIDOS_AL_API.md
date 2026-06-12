@@ -37,3 +37,11 @@ no a la imagen ni al texto. El otro asistente ajustara el motor para que exista 
 fill_opacity / fondo del sello configurable. El simulador de console ya asume este
 comportamiento: una sola "Opacidad del fondo" que pone un fondo blanco semitransparente
 detras del contenido del sello. Sincronizar params cuando el API lo soporte.
+
+## P4-FINAL: parametro fill_opacity (nombre definitivo, acordado 2026-06-12)
+Nombre del parametro: fill_opacity (float 0.0-1.0, default 0.0 = transparente).
+Dibuja un fondo blanco solido detras de TODO el sello (imagen+texto) con esa
+opacidad. NO altera image_opacity ni text_opacity (siguen igual). Default 0.0 =>
+firmas existentes no cambian. Form param: fill_opacity: float = Form(0.0).
+console YA usa fill_opacity en el editor (renombrado de bg_opacity). Cuando el API
+lo soporte, el preview coincidira pixel-perfect.
