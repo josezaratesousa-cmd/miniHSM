@@ -267,3 +267,29 @@ button svg{vertical-align:-3px}
 .ed-defcheck2{margin-left:auto;white-space:nowrap}
 /* la hoja del preview con posicion relativa para anclar el engranaje */
 .ed-sheet{position:relative}
+
+/* ===== FIX preview del sello (consolidado, gana por ser ultimo) ===== */
+.ed-right .ed-sheet{flex:1;min-height:320px;background:#fff;border:1px solid var(--line);border-radius:4px;position:relative;overflow:hidden}
+.ed-right .sheet-lines{position:absolute;top:16px;left:16px;right:48px;display:flex;flex-direction:column;gap:9px}
+.ed-right .sheet-lines span{height:6px;background:#eef1f5;border-radius:3px}
+.ed-right .sheet-lines span:nth-child(1){width:70%}
+.ed-right .sheet-lines span:nth-child(2){width:90%}
+.ed-right .sheet-lines span:nth-child(3){width:80%}
+/* el sello: caja de tamaño fijo (JS pone w/h), anclada abajo-izquierda */
+#ed-stamp{position:absolute;bottom:28px;left:24px;max-width:none}
+#ed-stamp .sps-txt{font-size:9px;line-height:1.4}
+#ed-stamp .sps-txt div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* engranaje: arriba-derecha, fuera de las lineas de texto */
+.ed-right .stamp-gear{top:12px;right:12px}
+/* popover: layout de barras que NO se pega y muestra el valor a la derecha */
+.gear-pop{width:248px}
+.gear-pop .gear-title{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:10px}
+.gear-close{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px;display:flex}
+.gear-close:hover{color:var(--bad)}
+.gear-pop .rng{display:grid;grid-template-columns:72px 1fr 34px;align-items:center;gap:8px;margin-bottom:9px;font-size:11px;color:var(--muted)}
+.gear-pop .rng label{min-width:0;white-space:nowrap}
+.gear-pop .rng input[type=range]{width:100%;min-width:0}
+.gear-pop .rng span{text-align:right;font-size:11px;color:var(--ink)}
+/* FIX check fecha alineado */
+.ed-datecheck{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin-top:14px;cursor:pointer}
+.ed-datecheck input{width:15px;height:15px;flex-shrink:0;margin:0}

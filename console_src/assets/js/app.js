@@ -407,12 +407,12 @@ function editorHTML(d){
         <div class="sheet-stamp" id="ed-stamp"></div>
         <button type="button" class="stamp-gear" id="ed-gear" onclick="toggleGear()" aria-label="Ajustar el sello">${svg("settings",15)}</button>
         <div class="gear-pop" id="ed-gearpop" style="display:none">
-          <div class="gear-title">${svg("settings",14)} Ajustar el sello</div>
+          <div class="gear-title"><span>${svg("settings",14)} Ajustar el sello</span><button type="button" class="gear-close" onclick="toggleGear()" aria-label="Cerrar">${svg("x",14)}</button></div>
           <div class="rng"><label>Ancho</label><input type="range" id="ed-w" min="120" max="520" value="${p.stamp_w||400}"><span id="ed-wv">${p.stamp_w||400}</span></div>
           <div class="rng"><label>Alto</label><input type="range" id="ed-h" min="60" max="300" value="${p.stamp_h||120}"><span id="ed-hv">${p.stamp_h||120}</span></div>
-          <div class="rng"><label>Tamaño imagen</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
+          <div class="rng"><label>Tamaño img</label><input type="range" id="ed-iw" min="20" max="80" value="${parseInt(p.image_width)||40}"><span id="ed-iwv">${parseInt(p.image_width)||40}%</span></div>
           <div class="rng"><label>Opacidad img</label><input type="range" id="ed-iopa" min="10" max="100" value="${Math.round((p.image_opacity??1)*100)}"><span id="ed-iopav">${Math.round((p.image_opacity??1)*100)}%</span></div>
-          <div class="rng"><label>Opacidad texto</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
+          <div class="rng"><label>Opacidad txt</label><input type="range" id="ed-topa" min="20" max="100" value="${Math.round((p.text_opacity??1)*100)}"><span id="ed-topav">${Math.round((p.text_opacity??1)*100)}%</span></div>
           <div class="gear-foot">
             <label><input type="checkbox" id="ed-border" ${p.border?'checked':''}> Borde</label>
             <select id="ed-imgmode"><option value="left"${p.image_mode==='left'?' selected':''}>Imagen al lado</option><option value="background"${p.image_mode==='background'?' selected':''}>Imagen de fondo</option></select>
@@ -535,16 +535,16 @@ function updatePreview(){
   const stamp=document.getElementById('ed-stamp');
   if(!stamp) return;
   stamp.style.display='block';
-  stamp.style.position='relative';
-  stamp.style.border = p.border ? `${p.border_width}px solid #185FA5` : '1px dashed var(--line)';
-  // tamaño del sello escalado para el preview (proporcional al real)
+  stamp.style.border = p.border ? `${p.border_width}px solid #185FA5` : '1px dashed #c9d4e3';
+  // tamaño del sello escalado para el preview (proporcional al real). NO tocar position (lo fija el CSS: abajo-izq).
   const W=p.stamp_w||400, H=p.stamp_h||120;
-  const scale=Math.min(240/W, 150/H, 0.6);
+  const scale=Math.min(230/W, 150/H, 0.6);
   stamp.style.width=Math.round(W*scale)+'px';
   stamp.style.height=Math.round(H*scale)+'px';
   stamp.style.boxSizing='border-box';
   stamp.style.overflow='hidden';
   stamp.style.background='#fff';
+  stamp.style.padding='0';
 
   const lines=stampLines(p);
   // color del texto segun text_opacity (igual que el API: g=1-op, gris)
