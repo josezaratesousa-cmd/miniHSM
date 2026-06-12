@@ -394,26 +394,6 @@ function editorHTML(d){
     <div class="ed-form">
       <div class="fld"><label>Nombre del diseño</label><input type="text" id="ed-nombre" value="${esc(d.nombre)}"></div>
 
-      <div class="ed-section">
-        <div class="ed-sec-head"><span>${svg("stamp")} Sello visible</span>
-          <label class="sw"><input type="checkbox" id="ed-visible" ${p.visible?'checked':''}> <span></span></label>
-        </div>
-        <div id="ed-stampbox" style="${p.visible?'':'display:none'}">
-          <div class="fld"><label>Contenido del sello</label>
-            <select id="ed-src">
-              <option value="attributes"${src==='attributes'?' selected':''}>Atributos — usa los datos de la firma</option>
-              <option value="default"${src==='default'?' selected':''}>Estándar — texto del sistema</option>
-              <option value="custom"${src==='custom'?' selected':''}>Personalizado — tú escribes el texto</option>
-            </select>
-          </div>
-          <div class="fld" id="ed-linesbox" style="${src==='custom'?'':'display:none'}">
-            <label>Texto del sello (una línea por renglón)</label>
-            <textarea id="ed-lines" rows="3" placeholder="Firmado por %(signer)s&#10;Fecha: %(ts)s">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
-            <div class="ed-hint2">Comodines: %(signer)s = firmante · %(ts)s = fecha.</div>
-          </div>
-        </div>
-      </div>
-
       <div class="ed-acc" data-acc="img">
         <div class="ed-acc-head"><span>${svg("image")} Imagen y estilo</span><span class="ed-chev">${svg("chev")}</span></div>
         <div class="ed-acc-body">
@@ -452,6 +432,23 @@ function editorHTML(d){
         </div>
         <div class="fld" style="margin-top:6px"><label>Modo de firma</label>
           <select id="ed-mode"><option value="approval"${p.mode==='approval'?' selected':''}>Aprobación — permite más firmas</option><option value="certify"${p.mode==='certify'?' selected':''}>Certificación — sella</option></select>
+        </div>
+        <div class="ed-sec-head" style="margin-top:10px"><span>${svg("stamp")} Sello visible</span>
+          <label class="sw"><input type="checkbox" id="ed-visible" ${p.visible?'checked':''}> <span></span></label>
+        </div>
+        <div id="ed-stampbox" style="${p.visible?'':'display:none'}">
+          <div class="fld"><label>Contenido del sello</label>
+            <select id="ed-src">
+              <option value="attributes"${src==='attributes'?' selected':''}>Atributos — usa los datos de la firma</option>
+              <option value="default"${src==='default'?' selected':''}>Estándar — texto del sistema</option>
+              <option value="custom"${src==='custom'?' selected':''}>Personalizado — tú escribes el texto</option>
+            </select>
+          </div>
+          <div class="fld" id="ed-linesbox" style="${src==='custom'?'':'display:none'}">
+            <label>Texto del sello (una línea por renglón)</label>
+            <textarea id="ed-lines" rows="3" placeholder="Firmado por %(signer)s&#10;Fecha: %(ts)s">${esc((p.stamp_lines||[]).join('\n'))}</textarea>
+            <div class="ed-hint2">Comodines: %(signer)s = firmante · %(ts)s = fecha.</div>
+          </div>
         </div>
       </div>
 
