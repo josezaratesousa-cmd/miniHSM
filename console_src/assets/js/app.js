@@ -469,19 +469,25 @@ function toggleGear(){
   }
 }
 function makeDraggable(pop){
-  if(pop._drag) return;
-  pop._drag=true;
+  if(pop._dragBound) return;
+  pop._dragBound=true;
   const head=pop.querySelector('.gear-title')||pop;
   head.style.cursor='grab';
-  let sx,sy,ox,oy,drag=false;
+  let sx,sy,startL,startT,drag=false;
   head.addEventListener('mousedown',e=>{
-    drag=true; sx=e.clientX; sy=e.clientY;
-    const r=pop.getBoundingClientRect(), pr=pop.offsetParent.getBoundingClientRect();
-    ox=r.left-pr.left; oy=r.top-pr.top;
-    pop.style.right='auto'; pop.style.left=ox+'px'; pop.style.top=oy+'px';
+    if(e.target.closest('.gear-close')) return;
+    drag=true;
+    const r=pop.getBoundingClientRect();   // popover es position:fixed -> coords de viewport
+    startL=r.left; startT=r.top; sx=e.clientX; sy=e.clientY;
+    pop.style.right='auto'; pop.style.bottom='auto';
+    pop.style.left=startL+'px'; pop.style.top=startT+'px';
     head.style.cursor='grabbing'; e.preventDefault();
   });
-  window.addEventListener('mousemove',e=>{ if(!drag)return; pop.style.left=(ox+e.clientX-sx)+'px'; pop.style.top=(oy+e.clientY-sy)+'px'; });
+  window.addEventListener('mousemove',e=>{
+    if(!drag) return;
+    pop.style.left=(startL+e.clientX-sx)+'px';
+    pop.style.top=(startT+e.clientY-sy)+'px';
+  });
   window.addEventListener('mouseup',()=>{ if(drag){drag=false; head.style.cursor='grab';} });
 }
 
