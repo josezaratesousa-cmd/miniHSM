@@ -136,6 +136,47 @@ try {
     exit;
   }
 
+
+  if ($action === 'pdf_upload' && $_SERVER['REQUEST_METHOD']==='POST') {
+    if (empty($_FILES['pdf']) || $_FILES['pdf']['error'] !== UPLOAD_ERR_OK) {
+      http_response_code(400); echo json_encode(['error'=>'no file']); exit;
+    }
+    $f = $_FILES['pdf'];
+    if ($f['size'] > 20*1024*1024) { http_response_code(400); echo json_encode(['error'=>'too big']); exit; }
+    // validar que sea PDF real
+    $fi = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($fi, $f['tmp_name']); finfo_close($fi);
+    if ($mime !== 'application/pdf') { http_response_code(400); echo json_encode(['error'=>'not pdf']); exit; }
+
+    // guardar en zona privada del tenant
+    $rel = 'uploads/documents';
+    $dir = '/home/xami/tenants/'.$tid.'/'.$rel;
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    $fname = 'u'.$uid.'_'.bin2hex(random_bytes(8)).'.pdf';
+    $dest = $dir.'/'.$fname;
+    if (!move_uploaded_file($f['tmp_name'], $dest)) { http_response_code(500); echo json_encode(['error'=>'save failed']); exit; }
+    @chmod($dest, 0600);
+
+    // medir el PDF con pdfinfo: paginas + dimensiones de la primera pagina
+    $pages = 0; $w = 0; $h = 0;
+    $out = [];
+    @exec('pdfinfo '.escapeshellarg($dest).' 2>/dev/null', $out);
+    foreach ($out as $line) {
+      if (preg_match('/^Pages:\s+(\d+)/', $line, $m)) $pages = (int)$m[1];
+      if (preg_match('/^Page size:\s+([\d.]+)\s+x\s+([\d.]+)/', $line, $m)) { $w = (float)$m[1]; $h = (float)$m[2]; }
+    }
+    echo json_encode([
+      'ok'=>true,
+      'path'=>$rel.'/'.$fname,
+      'filename'=>$f['name'],
+      'size'=>$f['size'],
+      'pages'=>$pages,
+      'width'=>$w,
+      'height'=>$h
+    ]);
+    exit;
+  }
+
   http_response_code(400);
   echo json_encode(['error'=>'acción desconocida']);
 } catch (Throwable $e) {

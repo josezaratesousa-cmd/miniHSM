@@ -2,6 +2,15 @@
 const API = '/app/api.php';
 const ICONS={
  check:'<path d="M5 12l5 5L20 7"/>',
+ chevronDown:'<path d="M6 9l6 6 6-6"/>',
+ doc:'<path d="M6 2h7l5 5v15H6z"/><path d="M13 2v5h5"/>',
+ alignLeft:'<path d="M4 6h10M4 12h16M4 18h10"/>',
+ alignCenter:'<path d="M7 6h10M4 12h16M7 18h10"/>',
+ alignRight:'<path d="M10 6h10M4 12h16M10 18h10"/>',
+ alignTop:'<path d="M4 5h16M8 9v10M12 9v10M16 9v10"/>',
+ alignMiddle:'<path d="M4 12h16M8 6v4M8 14v4M16 6v4M16 14v4"/>',
+ alignBottom:'<path d="M4 19h16M8 5v10M12 5v10M16 5v10"/>',
+
  x:'<path d="M6 6l12 12M18 6L6 18"/>',
  'file-x':'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M10 14l4 4M14 14l-4 4"/>',
  'file-check':'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 15l2 2 3-3"/>',
@@ -232,15 +241,188 @@ function timelineHTML(ev){
 }
 
 /* ---------- Nueva firma (placeholder de form; encolado en fase siguiente) ---------- */
-function openNuevo(){
-  openDrawer(`
-    <div class="drawer-head"><span class="dh-title">${svg("pencil")} Nueva firma</span><button class="dh-close" onclick="closeDrawer()">&times;</button></div>
-    <div class="fld"><label>Dispositivo / identidad</label><select id="nf-dev"><option>Mi firma personal (fe4dfede…)</option></select></div>
-    <div class="fld"><label>Documento</label><div class="dropzone" id="nf-drop"><span style="font-size:26px">${svg("upload",20)}</span><br>Arrastra el PDF aquí o haz clic</div></div>
-    <div class="fld"><label>Motivo (opcional)</label><input type="text" placeholder="Aprobación"></div>
-    <div class="tl-date" style="margin-bottom:14px">${svg("info")} Usará tus preferencias guardadas</div>
-    <div style="display:flex;gap:8px"><button class="btn" onclick="alert('Encolado: pendiente de implementar en la siguiente subfase')">${svg("send")} Enviar a firmar</button><button class="btn ghost" onclick="closeDrawer()">Cancelar</button></div>`);
+let _nf = null;
+
+async function openNuevo(){
+  _nf = { dev:null, pdf:null, design:null, designs:[], accOpen:false,
+          align_h:'right', align_v:'bottom', adv:false, fx:'', fy:'' };
+  // cargar disenos (predeterminado primero)
+  let dz=[]; try{ const r=await apiGet('designs'); dz=r.items||[]; }catch(e){}
+  dz.sort((a,b)=>(b.es_default?1:0)-(a.es_default?1:0));
+  _nf.designs=dz;
+  _nf.design = dz.find(d=>d.es_default) || dz[0] || null;
+  let devs=[]; try{ const r=await apiGet('devices'); devs=r.items||[]; }catch(e){}
+  _nf.devs=devs;
+  drawer.classList.add('wide');
+  openDrawer(nuevoHTML());
+  bindNuevo();
 }
+
+function nuevoHTML(){
+  const devOpts = (_nf.devs&&_nf.devs.length)
+    ? _nf.devs.map(d=>`<option value="${esc(d.device_id)}">${esc(d.alias||d.device_id)} · ${esc(d.device_id)}</option>`).join('')
+    : `<option>Sin dispositivos</option>`;
+  return `
+  <div class="drawer-head"><span class="dh-title">${svg("pencil")} Nueva firma</span><button class="dh-close" onclick="closeNuevo()">&times;</button></div>
+  <div class="nf">
+    <div class="fld"><label>Firmar con</label><select id="nf-dev">${devOpts}</select></div>
+
+    <div class="fld"><label>Documento</label>
+      <div id="nf-dropwrap">${_nf.pdf ? nfPdfCard() : `<div class="dropzone" id="nf-drop">${svg("upload",22)}<br>Arrastra el PDF o haz clic</div>`}</div>
+      <input type="file" id="nf-pdffile" accept="application/pdf" hidden>
+    </div>
+
+    <div class="fld"><label>Diseño de firma</label>
+      <div id="nf-acc">${nfAccordion()}</div>
+    </div>
+
+    <div class="fld"><label>Página</label>
+      <select id="nf-page">
+        <option value="last">Última página</option>
+        <option value="last-1">Última − 1</option>
+        <option value="first">Primera página</option>
+        <option value="n">Número específico…</option>
+      </select>
+      <input type="number" id="nf-pagenum" min="1" value="1" style="display:none;margin-top:6px;width:90px" placeholder="N°">
+    </div>
+
+    <div class="fld">
+      <div class="nf-poshead"><label style="margin:0">¿Dónde va el sello?</label><span class="nf-advtoggle" id="nf-advtoggle" onclick="nfToggleAdv()">${svg("settings",13)} Avanzado</span></div>
+      <div id="nf-possimple">
+        <div class="nf-alignrow"><span>Horizontal</span>
+          <button type="button" class="nf-al ${_nf.align_h==='left'?'on':''}" data-h="left">${svg("alignLeft",15)}</button>
+          <button type="button" class="nf-al ${_nf.align_h==='center'?'on':''}" data-h="center">${svg("alignCenter",15)}</button>
+          <button type="button" class="nf-al ${_nf.align_h==='right'?'on':''}" data-h="right">${svg("alignRight",15)}</button>
+        </div>
+        <div class="nf-alignrow"><span>Vertical</span>
+          <button type="button" class="nf-al ${_nf.align_v==='top'?'on':''}" data-v="top">${svg("alignTop",15)}</button>
+          <button type="button" class="nf-al ${_nf.align_v==='middle'?'on':''}" data-v="middle">${svg("alignMiddle",15)}</button>
+          <button type="button" class="nf-al ${_nf.align_v==='bottom'?'on':''}" data-v="bottom">${svg("alignBottom",15)}</button>
+        </div>
+      </div>
+      <div id="nf-posadv" style="display:none">
+        <div class="nf-fxrow"><span>x</span><input type="text" id="nf-fx" placeholder="ancho − 220" value="${esc(_nf.fx)}"></div>
+        <div class="nf-fxrow"><span>y</span><input type="text" id="nf-fy" placeholder="40" value="${esc(_nf.fy)}"></div>
+        <div class="nf-fxhint">Variables: <code>ancho</code>, <code>alto</code> del PDF. Ej: <code>ancho/2</code> centra.</div>
+        <div id="nf-fxresolved" class="nf-fxresolved"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn" id="nf-send" onclick="nfSend()">${svg("send")} Enviar a firmar</button>
+      <button class="btn ghost" onclick="closeNuevo()">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+function nfPdfCard(){
+  const p=_nf.pdf;
+  return `<div class="nf-pdfcard">
+    ${svg("doc",24)}
+    <div class="nf-pdfmeta"><div class="nf-pdfname">${esc(p.filename)}</div>
+    <div class="nf-pdfsub">${fmtSize(p.size)} · ${p.pages} pág · ${Math.round(p.width)}×${Math.round(p.height)} pt</div></div>
+    <button type="button" class="nf-pdfx" onclick="nfClearPdf()">${svg("x",15)}</button>
+  </div>`;
+}
+
+function nfAccordion(){
+  if(!_nf.designs.length) return `<div class="nf-nodesign">No tienes diseños. Crea uno en Preferencias.</div>`;
+  const sel=_nf.design;
+  if(!_nf.accOpen){
+    return `<div class="nf-accbox">
+      <div class="nf-accrow head" onclick="nfToggleAcc()">
+        ${nfMiniPrev(sel)}
+        <div class="nf-acclabel">${esc(sel.nombre)} ${sel.es_default?'<span class="nf-badge">predeterminado</span>':''}</div>
+        ${svg("chevronDown",16)}
+      </div></div>`;
+  }
+  const rows=_nf.designs.map(d=>`
+    <div class="nf-accrow ${d.id===sel.id?'on':''}" onclick="nfPickDesign(${d.id})">
+      ${nfMiniPrev(d)}
+      <div class="nf-acclabel">${esc(d.nombre)} ${d.es_default?'<span class="nf-badge">predeterminado</span>':''}</div>
+      ${d.id===sel.id?svg("check",15):''}
+    </div>`).join('');
+  return `<div class="nf-accbox open">${rows}</div>`;
+}
+
+function nfMiniPrev(d){
+  const img = d.image_path ? fileURL(d.id) : null;
+  return `<div class="nf-mini">${stampHTML(d.params||{}, img)}</div>`;
+}
+
+function bindNuevo(){
+  const file=document.getElementById('nf-pdffile');
+  const drop=document.getElementById('nf-drop');
+  if(drop&&file){
+    drop.onclick=()=>file.click();
+    file.onchange=()=>{ if(file.files[0]) nfUploadPdf(file.files[0]); };
+    ['dragover','dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.toggle('over',ev==='dragover');}));
+    drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) nfUploadPdf(f); });
+  }
+  const pageSel=document.getElementById('nf-page');
+  if(pageSel) pageSel.onchange=()=>{ document.getElementById('nf-pagenum').style.display = pageSel.value==='n'?'block':'none'; };
+  document.querySelectorAll('.nf-al').forEach(b=>b.onclick=()=>{
+    if(b.dataset.h){ _nf.align_h=b.dataset.h; document.querySelectorAll('.nf-al[data-h]').forEach(x=>x.classList.toggle('on',x===b)); }
+    if(b.dataset.v){ _nf.align_v=b.dataset.v; document.querySelectorAll('.nf-al[data-v]').forEach(x=>x.classList.toggle('on',x===b)); }
+  });
+  const fx=document.getElementById('nf-fx'), fy=document.getElementById('nf-fy');
+  if(fx) fx.addEventListener('input',nfResolveFormulas);
+  if(fy) fy.addEventListener('input',nfResolveFormulas);
+}
+
+async function nfUploadPdf(f){
+  const wrap=document.getElementById('nf-dropwrap');
+  wrap.innerHTML=`<div class="dropzone">Subiendo y midiendo…</div>`;
+  try{
+    const fd=new FormData(); fd.append('pdf', f);
+    const r=await fetch(API+'?action=pdf_upload',{method:'POST',credentials:'same-origin',body:fd});
+    const j=await r.json();
+    if(j&&j.ok){ _nf.pdf=j; wrap.innerHTML=nfPdfCard(); nfResolveFormulas(); }
+    else { wrap.innerHTML=`<div class="dropzone" id="nf-drop">${svg("upload",22)}<br>Error. Reintenta</div>`; bindNuevo(); }
+  }catch(e){ wrap.innerHTML=`<div class="dropzone" id="nf-drop">${svg("upload",22)}<br>Error: ${esc(e.message)}</div>`; bindNuevo(); }
+}
+function nfClearPdf(){ _nf.pdf=null; document.getElementById('nf-dropwrap').innerHTML=`<div class="dropzone" id="nf-drop">${svg("upload",22)}<br>Arrastra el PDF o haz clic</div>`; bindNuevo(); }
+
+function nfToggleAcc(){ _nf.accOpen=!_nf.accOpen; document.getElementById('nf-acc').innerHTML=nfAccordion(); }
+function nfPickDesign(id){ _nf.design=_nf.designs.find(d=>d.id===id); _nf.accOpen=false; document.getElementById('nf-acc').innerHTML=nfAccordion(); }
+
+function nfToggleAdv(){
+  _nf.adv=!_nf.adv;
+  document.getElementById('nf-possimple').style.display=_nf.adv?'none':'block';
+  document.getElementById('nf-posadv').style.display=_nf.adv?'block':'none';
+  document.getElementById('nf-advtoggle').classList.toggle('on',_nf.adv);
+  if(_nf.adv) nfResolveFormulas();
+}
+
+// resolutor seguro de formulas: solo ancho, alto, numeros, + - * / ( )
+function nfEval(expr, W, H){
+  if(!expr||!expr.trim()) return null;
+  let e=expr.toLowerCase().replace(/ancho/g,'('+W+')').replace(/alto/g,'('+H+')');
+  e=e.replace(/[−–]/g,'-'); // normalizar guiones
+  if(!/^[\d\s+\-*/().]+$/.test(e)) return NaN; // caracteres no permitidos
+  try{ const v=Function('"use strict";return('+e+')')(); return (typeof v==='number'&&isFinite(v))?v:NaN; }catch(_){ return NaN; }
+}
+function nfResolveFormulas(){
+  const box=document.getElementById('nf-fxresolved'); if(!box) return;
+  if(!_nf.pdf){ box.innerHTML=`<span class="muted2">Sube un PDF para estimar.</span>`; return; }
+  const W=_nf.pdf.width, H=_nf.pdf.height;
+  const fx=document.getElementById('nf-fx').value, fy=document.getElementById('nf-fy').value;
+  _nf.fx=fx; _nf.fy=fy;
+  const x=nfEval(fx,W,H), y=nfEval(fy,W,H);
+  if(x===null&&y===null){ box.innerHTML=''; return; }
+  const bad = Number.isNaN(x)||Number.isNaN(y);
+  if(bad){ box.innerHTML=`<span class="nf-bad">${svg("x",12)} Fórmula inválida</span>`; return; }
+  box.innerHTML=`<span class="nf-ok">${svg("check",12)} En este PDF (${Math.round(W)}×${Math.round(H)}): x=${Math.round(x)}, y=${Math.round(y)}</span>`;
+}
+
+function nfSend(){
+  if(!_nf.pdf){ alert('Primero sube un documento PDF.'); return; }
+  if(!_nf.design){ alert('Elige un diseño de firma.'); return; }
+  // (el envio real al API se implementa en el siguiente paso)
+  alert('Listo para enviar:\n- PDF: '+_nf.pdf.filename+' ('+_nf.pdf.pages+' pág)\n- Diseño: '+_nf.design.nombre+'\n- Página: '+document.getElementById('nf-page').value+'\n- Posición: '+(_nf.adv?('x='+_nf.fx+', y='+_nf.fy):(_nf.align_h+'/'+_nf.align_v))+'\n\n(El envío real al API es el siguiente paso.)');
+}
+
+function closeNuevo(){ drawer.classList.remove('wide'); closeDrawer(); _nf=null; }
 
 /* ---------- Dispositivos ---------- */
 async function renderDispositivos(){

@@ -337,3 +337,46 @@ button svg{vertical-align:-3px}
 .ed-right .sheet-lines span:nth-child(14){width:89%}
 .ed-right .sheet-lines span:nth-child(15){width:80%}
 .ed-right .sheet-lines span:nth-child(16){width:55%}
+
+/* ===== Drawer Nueva firma ===== */
+.nf .fld{margin-bottom:14px}
+.nf-pdfcard{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--bg)}
+.nf-pdfcard svg{color:var(--accent);flex-shrink:0}
+.nf-pdfmeta{flex:1;min-width:0}
+.nf-pdfname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nf-pdfsub{font-size:11px;color:var(--muted)}
+.nf-pdfx{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;display:flex}
+.nf-pdfx:hover{color:var(--bad)}
+
+/* acordeon */
+.nf-accbox{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.nf-accbox.open{border-color:var(--accent)}
+.nf-accrow{display:flex;align-items:center;gap:10px;padding:9px 11px;cursor:pointer}
+.nf-accbox.open .nf-accrow:not(:last-child){border-bottom:1px solid var(--line)}
+.nf-accrow:hover{background:var(--panel)}
+.nf-accrow.on{background:rgba(77,184,255,.08)}
+.nf-accrow svg{color:var(--muted);flex-shrink:0}
+.nf-accrow.on svg{color:var(--accent)}
+.nf-acclabel{flex:1;font-size:13px}
+.nf-badge{font-size:10px;background:var(--bg);color:var(--accent);padding:1px 6px;border-radius:6px;border:1px solid var(--line);margin-left:4px}
+.nf-mini{width:64px;height:32px;flex-shrink:0;border:1px solid var(--line);border-radius:3px;background:#fff;overflow:hidden;position:relative}
+.nf-mini .dprev-stamp{width:100%;height:100%;font-size:6px}
+.nf-nodesign{font-size:12px;color:var(--muted);padding:10px;border:1px dashed var(--line);border-radius:8px}
+
+/* posicion */
+.nf-poshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.nf-advtoggle{font-size:11px;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.nf-advtoggle.on{font-weight:600}
+.nf-alignrow{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.nf-alignrow span{font-size:12px;color:var(--muted);min-width:62px}
+.nf-al{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.nf-al:hover{border-color:var(--accent)}
+.nf-al.on{border-color:var(--accent);background:rgba(77,184,255,.1);color:var(--accent)}
+.nf-fxrow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.nf-fxrow span{font-size:12px;width:14px;color:var(--muted)}
+.nf-fxrow input{flex:1;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-size:12px;font-family:monospace}
+.nf-fxhint{font-size:11px;color:var(--muted);margin-top:2px}
+.nf-fxhint code{background:var(--panel);padding:1px 4px;border-radius:3px;font-size:10px}
+.nf-fxresolved{margin-top:8px;font-size:11px}
+.nf-ok{color:var(--ok,#2ea043);display:inline-flex;align-items:center;gap:5px}
+.nf-bad{color:var(--bad);display:inline-flex;align-items:center;gap:5px}
