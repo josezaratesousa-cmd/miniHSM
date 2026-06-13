@@ -16,6 +16,7 @@
 #include "captive_portal.h"
 #include "version.h"
 #include "esp_system.h"
+#include "wallet_crypto.h"
 
 static const char *TAG = "main";
 
@@ -45,6 +46,7 @@ void app_main(void)
     /* 2. Crypto Engine */
     ESP_ERROR_CHECK(crypto_engine_init());
     ESP_LOGI(TAG, "[2/7] Crypto Engine OK (PSA / P-256 / DER)");
+    wallet_selftest();   /* T1: valida secp256k1 EVM en el chip (no bloquea boot) */
 
     /* 3. Vault Manager */
     ESP_ERROR_CHECK(vault_init());
