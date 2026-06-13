@@ -10,7 +10,7 @@
 
 #define CUSTODY_MAX_CREDS  16
 #define CUSTODY_ALIAS_MAX  32
-#define CUSTODY_CERT_MAX   2048
+#define CUSTODY_CERT_MAX   4000  /* PEM. Cert de produccion c/extensiones ~2.7KB; tope NVS string ~4000B */
 #define CUSTODY_TOTP_SEED_LEN 20   /* semilla TOTP (RFC6238) */
 #define CUSTODY_PRIV_DER_MAX  2048 /* PKCS#8 DER: RSA-2048~1218B, RSA-3072~1.8KB, EC P-256~138B */
 
