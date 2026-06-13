@@ -1821,3 +1821,20 @@ Cierra el diseno de B6. Decisiones discutidas y aprobadas:
                        "entries":[ {<campos>, "sig": <COSE_Sign1 entrada, detached> } ] } },
     "proof":    { "type":"CoseSign1ES256", "did":"did:key:z...", "cose":"<hex detached sobre data.log>" },
     "stamping": { "trxid","recipient","blockhash","nonce","timestamp" } }    # B7, opcional/al vuelo
+
+### Doble firmado del audit — CONTRATO VALIDADO en sandbox (2026-06-13)
+Prototipo Python (CBOR+P-256) reproduce el mismo COSE_Sign1/ES256 + did:key de la VC,
+con PAYLOAD DETACHED. Verifica OK y detecta entrada modificada, entrada eliminada y
+firma de otra clave. Contrato fijado:
+- Cada firma = COSE_Sign1 (tag18) [ protected(bstr), unprotected({}), payload(nil), sig(64B r||s) ].
+  Lo firmado = CBOR canonico de la estructura; Sig_structure=["Signature1",protected,b"",payload],
+  external_aad vacio; alg ES256 en protected {1:-7}.
+- (1) sig POR ENTRADA: protected {1:-7, 4:kid} (kid=id de epoca, 4B). El did NO se repite por
+  entrada; va UNA vez en data.log.epoch.did. ~80B con wrap COSE -> se guarda solo la firma RAW
+  64B/entrada y se reconstruye el COSE al servir (ahorra ~16B/entrada).
+- (2) proof DE ENTREGA: protected {1:-7} (sin kid); did explicito en el JSON, formato igual a la VC:
+  proof={type:"CoseSign1ES256", did:"did:key:z...", cose:"<hex detached>"}. proof.cose ~74B.
+- data.log = {from,to,count,issuedAt,epoch:{kid,did},entries:[{<campos>,sig}]} -> el proof lo cubre.
+- Capacidad real: entrada ~210B + firma 64B ~= 274B -> ~3800 entradas/1MB (antes se estimo de mas).
+- Implementacion C: reusar attestation/ con variante detached (payload nil; firmar Sig_structure
+  con el payload externo). Misma op ECDSA P-256 de hoy; solo suma el wrap CBOR.
