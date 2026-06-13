@@ -1630,3 +1630,11 @@ app.js en JS PURO (forge + elliptic), sin tocar firmware ni reflashear:
 - Validado en contenedor con el CODIGO EXACTO de app.js: openP12 (scalar+cert) OK, sha256 vector
   OK, y ECIES interopera con Python/cryptography (descifra el payload {secret,alias,cert,priv,pass}).
 - Solo cambia app.js (live + repo). El usuario solo RECARGA http://<chip>/custodia, sin reflashear.
+
+### CUSTODIA UI — openP12 robusto + deteccion no-P256 (2026-06-12)
+Un .p12 RSA hacia crashear openP12 ("reading 'tagClass'"): forge parsea el cert RSA y deja
+bag.asn1 vacio. Ahora: cert se saca de bag.asn1 o, si falta, de certificateToAsn1(bag.cert);
+la clave se valida por OID (ecPublicKey 1.2.840.10045.2.1) y longitud de escalar (32B) -> si no,
+mensaje claro "no es EC P-256, el chip solo custodia P-256". Validado: EC OK, RSA rechazado limpio.
+DEUDA TECNICA: soporte RSA en custody_sign (el chip hoy solo firma P-256 ECDSA). Muchas
+credenciales de firma reales son RSA -> evaluar firma RSA en el firmware como feature futura.

@@ -55,23 +55,33 @@
     try { p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(bin, "binary")), p12pass); }
     catch (e) { throw new Error("contrasena del .p12 incorrecta o archivo invalido"); }
 
+    // certificado: asn1 crudo o, si forge lo parseo (p.ej. RSA), reconstruir desde el objeto
     let cb = p12.getBags({ bagType: forge.pki.oids.certBag }); cb = cb[forge.pki.oids.certBag] || [];
     if (!cb.length) throw new Error("el .p12 no contiene certificado");
-    const certDer = forge.asn1.toDer(cb[0].asn1).getBytes();         // cb.asn1 ES el cert X.509
+    let certAsn1 = cb[0].asn1;
+    if (!certAsn1 && cb[0].cert) { try { certAsn1 = forge.pki.certificateToAsn1(cb[0].cert); } catch (e) {} }
+    if (!certAsn1) throw new Error("no pude leer el certificado del .p12");
+    const certDer = forge.asn1.toDer(certAsn1).getBytes();
     const b64 = forge.util.encode64(certDer);
     const certPem = "-----BEGIN CERTIFICATE-----\n" +
       b64.replace(/(.{64})/g, "$1\n").replace(/\n$/, "") + "\n-----END CERTIFICATE-----\n";
 
+    // clave: DEBE ser EC P-256 (el chip solo firma P-256)
     let kb = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag }); kb = kb[forge.pki.oids.pkcs8ShroudedKeyBag] || [];
     if (!kb.length) { const k2 = p12.getBags({ bagType: forge.pki.oids.keyBag }); kb = k2[forge.pki.oids.keyBag] || []; }
     if (!kb.length) throw new Error("el .p12 no contiene clave privada");
+    const NO_P256 = "Esta credencial no es EC P-256 (parece RSA u otra). El chip solo custodia claves P-256; necesitas un .p12 con clave de curva P-256 (prime256v1).";
+    const pk8 = kb[0].asn1;
+    let algOid = "";
+    try { algOid = forge.asn1.derToOid(pk8.value[1].value[0].value); } catch (e) {}
+    if (algOid !== "1.2.840.10045.2.1") throw new Error(NO_P256);
     let ecpk;
-    try { ecpk = forge.asn1.fromDer(kb[0].asn1.value[2].value); }     // PKCS#8 -> ECPrivateKey
-    catch (e) { throw new Error("no pude leer la clave EC del .p12"); }
-    let priv = binToU8(ecpk.value[1].value);
+    try { ecpk = forge.asn1.fromDer(pk8.value[2].value); } catch (e) { throw new Error("no pude leer la clave EC del .p12"); }
+    let priv;
+    try { priv = binToU8(ecpk.value[1].value); } catch (e) { throw new Error(NO_P256); }
     if (priv.length === 33 && priv[0] === 0) priv = priv.slice(1);
-    if (priv.length < 32) { const p = new Uint8Array(32); p.set(priv, 32 - priv.length); priv = p; }
-    if (priv.length !== 32) throw new Error("escalar privado invalido (" + priv.length + " bytes)");
+    if (priv.length < 32) { const pp = new Uint8Array(32); pp.set(priv, 32 - priv.length); priv = pp; }
+    if (priv.length !== 32) throw new Error("La clave EC no es P-256 (escalar de " + priv.length + " bytes). El chip solo custodia P-256.");
     return { privHex: hex(priv), certPem };
   }
   /* ---- UI ---- */
