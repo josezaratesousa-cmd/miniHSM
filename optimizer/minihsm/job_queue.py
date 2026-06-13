@@ -33,7 +33,7 @@ def _new_request_id() -> str:
     return "req_" + _secrets.token_hex(8)
 
 
-def enqueue(device_id: str, digest: str, credential_id=None, auth=None) -> str:
+def enqueue(device_id: str, digest: str, credential_id=None, auth=None, sig_type=None) -> str:
     """Encola un trabajo de firma para un device. Devuelve el requestId.
     credential_id: slot de credencial custodiada (None = clave de iniciacion del device).
     auth: blob opaco (passphrase/TOTP cifrados para el chip), transportado sin leerse."""
@@ -45,6 +45,7 @@ def enqueue(device_id: str, digest: str, credential_id=None, auth=None) -> str:
             "digest":       digest,
             "credentialId": credential_id,
             "auth":         auth,
+            "sigType":      sig_type,
             "status":       PENDING,
             "result":       None,
             "createdAt":    time.time(),

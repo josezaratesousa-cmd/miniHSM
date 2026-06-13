@@ -86,6 +86,21 @@ def _sig_size_for_cert(cert) -> int:
     return 72
 
 
+def _sigtype_name_for_cert(cert):
+    """Nombre del tipo de firma que entiende el chip ("RSA-2048" / "EC P-256"),
+    derivado del cert, para que el chip valide que coincide con la credencial elegida."""
+    try:
+        pk = cert.public_key
+        if pk.algorithm == 'rsa':
+            return f"RSA-{pk.bit_size}"
+        if pk.algorithm == 'ec':
+            c = {256: "P-256", 384: "P-384", 521: "P-521"}.get(pk.bit_size, "EC")
+            return f"EC {c}"
+    except Exception:
+        pass
+    return None
+
+
 class PollingSigner(signers.Signer):
     """pyhanko Signer que delega la firma al miniHSM por la cola de polling.
     credential_id != None -> firma con una credencial CUSTODIADA del chip (su cert
@@ -100,10 +115,12 @@ class PollingSigner(signers.Signer):
             if not custody_cert_pem:
                 raise ValueError("credential_id requiere credential_cert (PEM del cert custodiado)")
             super().__init__(signing_cert=_load_cert_pem(custody_cert_pem), cert_registry=store)
+            self._sig_type = _sigtype_name_for_cert(self.signing_cert)
         else:
             store.register(dev_pki.ca_cert_a1())
             super().__init__(signing_cert=dev_pki.device_cert_a1(device_id),
                              cert_registry=store)
+            self._sig_type = None
 
     async def async_sign_raw(self, data: bytes, digest_algorithm: str,
                              dry_run: bool = False) -> bytes:
@@ -114,7 +131,7 @@ class PollingSigner(signers.Signer):
             raise NotImplementedError(
                 f"el miniHSM (curva P-256) solo soporta SHA-256; se solicito {digest_algorithm}")
         digest = hashlib.sha256(data).hexdigest()
-        rid = job_queue.enqueue(self.device_id, digest, self.credential_id, self.auth)
+        rid = job_queue.enqueue(self.device_id, digest, self.credential_id, self.auth, self._sig_type)
         waited = 0
         while waited < SIGN_TIMEOUT:
             await asyncio.sleep(POLL_INTERVAL)

@@ -103,6 +103,8 @@ def heartbeat(req: Request, body: HeartbeatRequest):
                 job_payload["credentialId"] = pending["credentialId"]
             if pending.get("auth") is not None:
                 job_payload["auth"] = pending["auth"]
+            if pending.get("sigType"):
+                job_payload["sigType"] = pending["sigType"]
             log.info(f"Heartbeat entrega job {pending['requestId']} a {body.deviceId}")
 
     # Fase 4a: ceremonia de custodia pendiente? (el chip entra en modo AP con el secreto)

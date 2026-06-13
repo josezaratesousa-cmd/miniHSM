@@ -164,6 +164,7 @@ class DigestSignRequest(BaseModel):
     device_id:     str | None = None
     credential_id: int | None = None   # slot de credencial custodiada (None = clave del device)
     auth:          str | None = None   # blob opaco (passphrase/TOTP cifrados para el chip)
+    sig_type:      str | None = None   # opcional: "RSA-2048"/"EC P-256"; el chip valida que coincida
 
 _DIGEST_TIMEOUT = 30.0
 _DIGEST_POLL    = 0.5
@@ -180,7 +181,7 @@ async def sign_digest(req: DigestSignRequest):
         raise HTTPException(400, "credential_id requiere auth (passphrase/TOTP cifrados para el chip)")
 
     dev = _resolve_device(req.device_id)
-    rid = job_queue.enqueue(dev, digest, req.credential_id, req.auth)
+    rid = job_queue.enqueue(dev, digest, req.credential_id, req.auth, req.sig_type)
     waited = 0.0
     while waited < _DIGEST_TIMEOUT:
         await asyncio.sleep(_DIGEST_POLL)
