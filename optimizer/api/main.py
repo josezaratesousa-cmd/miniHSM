@@ -7,6 +7,8 @@ import logging
 import os
 from typing import Optional
 from pathlib import Path
+from datetime import datetime, timezone
+import subprocess
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import Response
@@ -42,6 +44,9 @@ from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://xami.run", "https://www.xami.run"],
+    # Custodia (Fase 4a): la pagina de ceremonia la sirve el chip (origen http en la LAN);
+    # debe poder llamar a la API. Solo rangos privados, solo http.
+    allow_origin_regex=r"http://(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.)[0-9.]+(:\d+)?",
     allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -104,6 +109,20 @@ def get_client() -> MiniHSMClient:
 
 # ── Health / Device ────────────────────────────────────────────────────────────
 
+def _optimizer_release():
+    try:
+        repo = Path(__file__).resolve().parents[2]
+        out = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=2)
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return "dev"
+
+_OPTIMIZER_RELEASE = _optimizer_release()
+
+
 @app.get("/health")
 def health():
     """Estado del optimizer + devices via heartbeat (sin conexion
@@ -111,8 +130,13 @@ def health():
     estado por los heartbeats/poll). Nunca se cuelga."""
     devices = registry.all_devices()
     online  = registry.online_devices()
+    now = datetime.now(timezone.utc)
     return {
         "optimizer":         "ok",
+        "version":           app.version,
+        "release":           _OPTIMIZER_RELEASE,
+        "time":              now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timeUnix":          int(now.timestamp()),
         "registeredDevices": len(devices),
         "onlineDevices":     len(online),
         "devices": [

@@ -1,6 +1,7 @@
 #include "custody_manager.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs.h"
@@ -21,8 +22,11 @@ typedef struct {
     char    alias[CUSTODY_ALIAS_MAX];
     uint8_t salt[SALT_SIZE];
     uint8_t fingerprint[32];
-    uint8_t in_use;
-    uint8_t rsv[3];
+    uint8_t  in_use;
+    uint8_t  sig_kind;   /* 0=EC, 1=RSA (crypto_key_kind_t) */
+    uint16_t priv_len;   /* longitud del PKCS#8 DER (RSA ~1.2KB, EC ~138B) */
+    uint16_t sig_bits;   /* 256, 2048, ... */
+    uint8_t  rsv[2];
 } custody_meta_t;
 
 static void key_for(char *out, int slot, const char *suf){
@@ -62,10 +66,11 @@ static int find_free_slot(nvs_handle_t h){
     return -1;
 }
 
-esp_err_t custody_add(const char *alias, const uint8_t *priv, const char *cert_pem,
+esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_der_len, const char *cert_pem,
                       const uint8_t *passphrase, size_t pass_len,
                       uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out){
-    if (!alias || !priv || !cert_pem || !passphrase || !slot_out) return ESP_ERR_INVALID_ARG;
+    if (!alias || !priv_der || !cert_pem || !passphrase || !slot_out) return ESP_ERR_INVALID_ARG;
+    if (priv_der_len == 0 || priv_der_len > CUSTODY_PRIV_DER_MAX) return ESP_ERR_INVALID_ARG;
     size_t cert_len = strlen(cert_pem);
     if (cert_len == 0 || cert_len >= CUSTODY_CERT_MAX) return ESP_ERR_INVALID_ARG;
 
@@ -80,9 +85,16 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv, const char *cert_p
     esp_fill_random(m.salt, SALT_SIZE);
     crypto_sha256((const uint8_t*)cert_pem, cert_len, m.fingerprint);
     m.in_use = 1;
+    m.priv_len = (uint16_t)priv_der_len;
+    {   int kind = CRYPTO_KEY_UNKNOWN, bits = 0;
+        if (crypto_pk_type(priv_der, priv_der_len, &kind, &bits) != ESP_OK){ nvs_close(h); return ESP_ERR_INVALID_ARG; }
+        m.sig_kind = (uint8_t)kind; m.sig_bits = (uint16_t)bits;
+    }
 
     uint8_t chip[CHIP_SECRET_SIZE], kek[32];
-    uint8_t wrap[WRAP_SIZE];                    /* priv cifrada */
+    size_t  pwrap_len = NONCE_SIZE + priv_der_len + GCMTAG_SIZE;
+    uint8_t *wrap = malloc(pwrap_len);          /* priv (PKCS#8) cifrada, longitud variable */
+    if (!wrap){ nvs_close(h); return ESP_ERR_NO_MEM; }
     uint8_t seed[CUSTODY_TOTP_SEED_LEN];
     uint8_t twrap[TOTP_WRAP_SIZE];              /* semilla TOTP cifrada */
     esp_fill_random(seed, CUSTODY_TOTP_SEED_LEN);
@@ -92,8 +104,8 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv, const char *cert_p
         err = cc_kek_derive(passphrase, pass_len, chip, CHIP_SECRET_SIZE, m.salt, SALT_SIZE, kek);
     if (err == ESP_OK){
         esp_fill_random(wrap, NONCE_SIZE);
-        err = cc_aead_encrypt(kek, wrap, priv, CRYPTO_PRIVKEY_SIZE,
-                             wrap + NONCE_SIZE, wrap + NONCE_SIZE + CRYPTO_PRIVKEY_SIZE);
+        err = cc_aead_encrypt(kek, wrap, priv_der, priv_der_len,
+                             wrap + NONCE_SIZE, wrap + NONCE_SIZE + priv_der_len);
     }
     if (err == ESP_OK){
         esp_fill_random(twrap, NONCE_SIZE);
@@ -102,16 +114,16 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv, const char *cert_p
     }
     crypto_zeroize(kek, sizeof(kek));
     crypto_zeroize(chip, sizeof(chip));
-    if (err != ESP_OK){ crypto_zeroize(seed,sizeof(seed)); nvs_close(h); return err; }
+    if (err != ESP_OK){ crypto_zeroize(seed,sizeof(seed)); free(wrap); nvs_close(h); return err; }
 
     char k[16]; uint64_t tc0 = 0;
-    key_for(k, slot, "priv"); err  = nvs_set_blob(h, k, wrap, WRAP_SIZE);
+    key_for(k, slot, "priv"); err  = nvs_set_blob(h, k, wrap, pwrap_len);
     key_for(k, slot, "totp"); if (err==ESP_OK) err = nvs_set_blob(h, k, twrap, TOTP_WRAP_SIZE);
     key_for(k, slot, "tc");   if (err==ESP_OK) err = nvs_set_u64(h, k, tc0);
     key_for(k, slot, "cert"); if (err==ESP_OK) err = nvs_set_str(h, k, cert_pem);
     key_for(k, slot, "meta"); if (err==ESP_OK) err = nvs_set_blob(h, k, &m, sizeof(m));
     if (err == ESP_OK) err = nvs_commit(h);
-    crypto_zeroize(wrap, sizeof(wrap));
+    crypto_zeroize(wrap, pwrap_len); free(wrap);
     crypto_zeroize(twrap, sizeof(twrap));
     nvs_close(h);
     if (err == ESP_OK){
@@ -139,17 +151,22 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
     if (read_meta(h, slot, &m) != ESP_OK || !m.in_use){ nvs_close(h); return ESP_ERR_NOT_FOUND; }
 
     char k[16]; size_t len;
-    uint8_t pwrap[WRAP_SIZE], twrap[TOTP_WRAP_SIZE]; uint64_t last_tc = 0;
-    key_for(k, slot, "priv"); len=sizeof(pwrap); err = nvs_get_blob(h, k, pwrap, &len);
-    if (err==ESP_OK && len!=WRAP_SIZE) err=ESP_ERR_INVALID_SIZE;
+    size_t  pwrap_len = NONCE_SIZE + m.priv_len + GCMTAG_SIZE;
+    uint8_t *pwrap = malloc(pwrap_len);
+    uint8_t twrap[TOTP_WRAP_SIZE]; uint64_t last_tc = 0;
+    if (!pwrap){ nvs_close(h); return ESP_ERR_NO_MEM; }
+    key_for(k, slot, "priv"); len=pwrap_len; err = nvs_get_blob(h, k, pwrap, &len);
+    if (err==ESP_OK && len!=pwrap_len) err=ESP_ERR_INVALID_SIZE;
     if (err==ESP_OK){ key_for(k, slot, "totp"); len=sizeof(twrap); err=nvs_get_blob(h,k,twrap,&len);
                       if (err==ESP_OK && len!=TOTP_WRAP_SIZE) err=ESP_ERR_INVALID_SIZE; }
     if (err==ESP_OK){ key_for(k, slot, "tc"); if (nvs_get_u64(h,k,&last_tc)!=ESP_OK) last_tc=0; }
-    if (err != ESP_OK){ nvs_close(h); return err; }
+    if (err != ESP_OK){ free(pwrap); nvs_close(h); return err; }
 
     uint8_t chip[CHIP_SECRET_SIZE], kek[32];
-    uint8_t seed[CUSTODY_TOTP_SEED_LEN], priv[CRYPTO_PRIVKEY_SIZE];
+    uint8_t seed[CUSTODY_TOTP_SEED_LEN];
+    uint8_t *priv_der = malloc(m.priv_len);
     uint64_t counter = 0;
+    if (!priv_der){ free(pwrap); nvs_close(h); return ESP_ERR_NO_MEM; }
     err = vault_get_chip_kek_secret(chip);
     if (err==ESP_OK)
         err = cc_kek_derive(passphrase, pass_len, chip, CHIP_SECRET_SIZE, m.salt, SALT_SIZE, kek);
@@ -166,18 +183,32 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
     crypto_zeroize(seed, sizeof(seed));
     /* descifrar priv y firmar */
     if (err==ESP_OK)
-        err = cc_aead_decrypt(kek, pwrap, pwrap+NONCE_SIZE, CRYPTO_PRIVKEY_SIZE,
-                              pwrap+NONCE_SIZE+CRYPTO_PRIVKEY_SIZE, priv);
+        err = cc_aead_decrypt(kek, pwrap, pwrap+NONCE_SIZE, m.priv_len,
+                              pwrap+NONCE_SIZE+m.priv_len, priv_der);
     crypto_zeroize(kek, sizeof(kek));
     crypto_zeroize(chip, sizeof(chip));
-    crypto_zeroize(pwrap, sizeof(pwrap));
+    crypto_zeroize(pwrap, pwrap_len); free(pwrap);
     crypto_zeroize(twrap, sizeof(twrap));
-    if (err==ESP_OK) err = crypto_sign(digest, priv, sig_der_out, sig_der_len);
-    crypto_zeroize(priv, sizeof(priv));
+    if (err==ESP_OK) err = crypto_pk_sign(priv_der, m.priv_len, digest, sig_der_out, CRYPTO_PK_SIG_MAX, sig_der_len);
+    crypto_zeroize(priv_der, m.priv_len); free(priv_der);
 
     if (err==ESP_OK){ key_for(k, slot, "tc"); nvs_set_u64(h, k, counter); nvs_commit(h); } /* anti-replay */
     nvs_close(h);
     return err;
+}
+
+esp_err_t custody_get_type(int slot, int *kind_out, int *bits_out){
+    if (slot < 0 || slot >= CUSTODY_MAX_CREDS) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    if (err != ESP_OK) return err;
+    custody_meta_t m;
+    err = read_meta(h, slot, &m);
+    nvs_close(h);
+    if (err != ESP_OK || !m.in_use) return ESP_ERR_NOT_FOUND;
+    if (kind_out) *kind_out = m.sig_kind;
+    if (bits_out) *bits_out = m.sig_bits;
+    return ESP_OK;
 }
 
 esp_err_t custody_get_cert(int slot, char *pem_out, size_t pem_cap){
@@ -203,6 +234,19 @@ esp_err_t custody_get_alias(int slot, char *alias_out, size_t cap){
     if (err != ESP_OK || !m.in_use) return ESP_ERR_NOT_FOUND;
     strncpy(alias_out, m.alias, cap - 1);
     alias_out[cap - 1] = 0;
+    return ESP_OK;
+}
+
+esp_err_t custody_get_fingerprint(int slot, char *hex_out, size_t cap){
+    if (slot < 0 || slot >= CUSTODY_MAX_CREDS || cap < 65) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    if (err != ESP_OK) return err;
+    custody_meta_t m;
+    err = read_meta(h, slot, &m);
+    nvs_close(h);
+    if (err != ESP_OK || !m.in_use) return ESP_ERR_NOT_FOUND;
+    crypto_bytes_to_hex(m.fingerprint, 32, hex_out);
     return ESP_OK;
 }
 

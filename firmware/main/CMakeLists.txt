@@ -14,6 +14,7 @@ idf_component_register(
         "cc_helpers/cc_helpers.c"
         "custody_manager/custody_manager.c"
         "ceremony/ceremony.c"
+        "attestation/attestation.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -29,6 +30,7 @@ idf_component_register(
         "cc_helpers"
         "custody_manager"
         "ceremony"
+        "attestation"
     REQUIRES
         nvs_flash
         esp_wifi

@@ -23,9 +23,12 @@
 #include "policy_engine.h"
 #include "audit_engine.h"
 #include "version.h"
+#include <time.h>
 #include "wifi_provision.h"
 #include "ceremony.h"
+#include "attestation.h"
 #include "esp_system.h"
+#include "esp_random.h"
 
 static const char *TAG = "network_engine";
 
@@ -320,13 +323,95 @@ static esp_err_t handler_verify(httpd_req_t *req)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  Bloque 0 — envelope comun de atestacion (/device /health /audit)            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* "Xami-<MODELO>-<DeviceID>" */
+static void att_device_name(char *out, size_t cap)
+{
+    char id[17]; vault_get_device_id(id);
+    snprintf(out, cap, "Xami-%s-%s", XAMI_MODEL, id);
+}
+
+/* firmware { version, build, release }  (release = hash corto del commit) */
+static cJSON *att_firmware_obj(void)
+{
+    cJSON *fw = cJSON_CreateObject();
+    cJSON_AddStringToObject(fw, "version", XAMI_VERSION);
+    cJSON_AddStringToObject(fw, "build",   XAMI_BUILD_NUMBER);
+    cJSON_AddStringToObject(fw, "release", XAMI_GIT_COMMIT);
+    return fw;
+}
+
+/* Agrega "time" (ISO 8601 UTC, o null si el reloj no es confiable) + "timeSynced".
+   Toda entrega de informacion externa lleva su sello de tiempo (base del Bloque 7). */
+static void att_add_time(cJSON *obj)
+{
+    bool synced = network_time_synced();
+    if (synced) {
+        time_t now = time(NULL);
+        struct tm tmv; gmtime_r(&now, &tmv);
+        char iso[32];
+        strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", &tmv);
+        cJSON_AddStringToObject(obj, "time", iso);
+    } else {
+        cJSON_AddNullToObject(obj, "time");
+    }
+    cJSON_AddBoolToObject(obj, "timeSynced", synced);
+}
+
+/*  GET /device/challenge — nonce de un solo uso para frescura de la VC          */
+/* ─────────────────────────────────────────────────────────────────────────── */
+static char    s_dev_challenge[33] = {0};
+static bool    s_dev_chal_used = true;
+static int64_t s_dev_chal_ts = 0;
+#define DEV_CHAL_TTL_S 120
+
+static esp_err_t handler_device_challenge(httpd_req_t *req)
+{
+    uint8_t rnd[16]; esp_fill_random(rnd, sizeof(rnd));
+    crypto_bytes_to_hex(rnd, sizeof(rnd), s_dev_challenge);
+    s_dev_chal_used = false;
+    s_dev_chal_ts   = esp_timer_get_time() / 1000000LL;
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON_AddStringToObject(resp, "challenge", s_dev_challenge);
+    cJSON_AddNumberToObject(resp, "ttl", DEV_CHAL_TTL_S);
+    att_add_time(resp);
+    char *s = cJSON_PrintUnformatted(resp);
+    send_json(req, 200, s);
+    free(s); cJSON_Delete(resp);
+    return ESP_OK;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /*  GET /device                                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 static esp_err_t handler_device(httpd_req_t *req)
 {
-    char device_id[17];
-    vault_get_device_id(device_id);
+    /* challenge opcional (?challenge=...) para frescura de la VC */
+    const char *use_chal = NULL;
+    char chal[40] = {0};
+    size_t qlen = httpd_req_get_url_query_len(req);
+    if (qlen > 0 && qlen < 96) {
+        char qbuf[96];
+        if (httpd_req_get_url_query_str(req, qbuf, sizeof(qbuf)) == ESP_OK)
+            httpd_query_key_value(qbuf, "challenge", chal, sizeof(chal));
+    }
+    if (chal[0]) {
+        int64_t age = esp_timer_get_time() / 1000000LL - s_dev_chal_ts;
+        if (!s_dev_chal_used && strcmp(chal, s_dev_challenge) == 0 && age <= DEV_CHAL_TTL_S) {
+            s_dev_chal_used = true;
+            use_chal = chal;
+        } else {
+            send_err(req, 400, "ERR_CHAL", "invalid or expired challenge");
+            return ESP_OK;
+        }
+    }
+
+    char name[48]; att_device_name(name, sizeof(name));
 
     uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
     vault_get_pubkey(pubkey);
@@ -337,8 +422,8 @@ static esp_err_t handler_device(httpd_req_t *req)
     cert_get_fingerprint(fingerprint);
 
     cJSON *resp = cJSON_CreateObject();
-    cJSON_AddStringToObject(resp, "deviceId",    device_id);
-    cJSON_AddStringToObject(resp, "firmware",    FIRMWARE_VERSION);
+    cJSON_AddStringToObject(resp, "deviceId",    name);
+    cJSON_AddItemToObject(resp,   "firmware",    att_firmware_obj());
     cJSON_AddStringToObject(resp, "pubkey",      pubkey_hex);
     cJSON_AddStringToObject(resp, "backend",     "mbedTLS-PSA");
     cJSON_AddStringToObject(resp, "curve",       "P-256");
@@ -346,6 +431,18 @@ static esp_err_t handler_device(httpd_req_t *req)
     cJSON_AddStringToObject(resp, "certFingerprint", fingerprint);
     cJSON_AddStringToObject(resp, "certState",
         cert_get_state() == CERT_STATE_PROVISIONED ? "PROVISIONED" : "UNPROVISIONED");
+    att_add_time(resp);
+
+    /* proof: Verifiable Credential del device como COSE_Sign1 (ES256), en hex */
+    char did[80] = {0};
+    static char cose_hex[3600];
+    if (att_device_vc(use_chal, cose_hex, sizeof(cose_hex), did, sizeof(did)) == ESP_OK) {
+        cJSON *proof = cJSON_CreateObject();
+        cJSON_AddStringToObject(proof, "type", "CoseSign1ES256");
+        cJSON_AddStringToObject(proof, "did",  did);
+        cJSON_AddStringToObject(proof, "cose", cose_hex);
+        cJSON_AddItemToObject(resp, "proof", proof);
+    }
 
     char *s = cJSON_PrintUnformatted(resp);
     send_json(req, 200, s);
@@ -363,12 +460,24 @@ static esp_err_t handler_health(httpd_req_t *req)
 {
     int64_t  uptime = esp_timer_get_time() / 1000000LL;
     uint32_t ops    = audit_get_count();
-    char resp[256];
-    snprintf(resp, sizeof(resp),
-        "{\"status\":\"ok\",\"uptime\":%lld,\"opCount\":%lu,"
-        "\"firmware\":\"%s\",\"secureBoot\":false}",
-        (long long)uptime, (unsigned long)ops, FIRMWARE_VERSION);
-    send_json(req, 200, resp);
+    char name[48]; att_device_name(name, sizeof(name));
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON_AddStringToObject(resp, "status", "ok");
+    cJSON_AddStringToObject(resp, "device", name);
+    cJSON_AddStringToObject(resp, "model",  XAMI_MODEL);
+    cJSON_AddItemToObject(resp, "firmware", att_firmware_obj());
+    cJSON_AddStringToObject(resp, "cert",
+        cert_get_state() == CERT_STATE_PROVISIONED ? "ca-signed" : "self-signed");
+    cJSON_AddNumberToObject(resp, "uptime",  (double)uptime);
+    cJSON_AddNumberToObject(resp, "opCount", (double)ops);
+    att_add_time(resp);
+    cJSON_AddBoolToObject(resp, "secureBoot", false);
+
+    char *s = cJSON_PrintUnformatted(resp);
+    send_json(req, 200, s);
+    free(s);
+    cJSON_Delete(resp);
     return ESP_OK;
 }
 
@@ -537,6 +646,7 @@ esp_err_t network_http_server_start(void)
         { .uri = "/cert",   .method = HTTP_GET,  .handler = handler_cert_get  },
         { .uri = "/cert",   .method = HTTP_POST, .handler = handler_cert_load },
         { .uri = "/csr",    .method = HTTP_GET,  .handler = handler_csr       },
+        { .uri = "/device/challenge", .method = HTTP_GET, .handler = handler_device_challenge },
         { .uri = "/device", .method = HTTP_GET,  .handler = handler_device    },
         { .uri = "/health", .method = HTTP_GET,  .handler = handler_health    },
         { .uri = "/audit",  .method = HTTP_GET,  .handler = handler_audit     },

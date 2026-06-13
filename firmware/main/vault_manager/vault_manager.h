@@ -24,6 +24,9 @@ esp_err_t vault_sign(
     size_t        *sig_len_out
 );
 
+/* Firma raw r||s (64B) con la clave del device, para la VC COSE/ES256. */
+esp_err_t vault_sign_raw(const uint8_t *digest, uint8_t *raw_out);
+
 /**
  * @brief Devuelve la clave publica del dispositivo.
  *        Se puede exponer libremente.

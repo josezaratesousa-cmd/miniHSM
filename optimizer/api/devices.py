@@ -233,8 +233,9 @@ class EnqueueJobRequest(BaseModel):
 
 
 class JobResultRequest(BaseModel):
-    signature: str = ""    # firma DER hex
+    signature: str = ""    # firma DER hex (ECDSA) o raw (RSA PKCS#1v15)
     cert:      str = ""    # certificado (PEM/DER segun device)
+    algorithm: str = ""    # ECDSA-P256-SHA256-DER | RSA-PKCS1v15-SHA256 (multi-cert)
     status:    str = "DONE"
     error:     str = ""
 
@@ -255,7 +256,8 @@ def enqueue_job(device_id: str, body: EnqueueJobRequest):
 def post_job_result(device_id: str, request_id: str, body: JobResultRequest):
     """El device postea el resultado de la firma."""
     status = job_queue.DONE if body.status == "DONE" else job_queue.ERROR
-    result = {"signature": body.signature, "cert": body.cert, "error": body.error}
+    result = {"signature": body.signature, "cert": body.cert,
+              "algorithm": body.algorithm, "error": body.error}
     ok = job_queue.set_result(device_id, request_id, result, status=status)
     if not ok:
         raise HTTPException(404, f"Job {request_id} not found for {device_id}")

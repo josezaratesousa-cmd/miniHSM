@@ -27,7 +27,7 @@ static const char *TAG = "heartbeat";
 
 /* Stack 8192 (antes 4096): el heartbeat ahora puede FIRMAR inline (vault_sign +
    TLS del POST de resultado). 8192 es el numero ya probado-seguro en el match. */
-#define HEARTBEAT_STACK_SIZE  8192
+#define HEARTBEAT_STACK_SIZE  16384  /* subido por RSA: mbedtls_pk_parse_key + RSA sign + TLS del POST */
 #define HEARTBEAT_PRIORITY    5
 #define MAX_URL_LEN           512
 #define MAX_BODY_LEN          512
@@ -46,7 +46,8 @@ static TaskHandle_t s_task     = NULL;
 
 static void post_job_result(const char *request_id, const char *device_id,
                              const char *sig_hex, const char *cert_pem,
-                             const char *status, const char *error)
+                             const char *status, const char *error,
+                             const char *algorithm)
 {
     static char url[640];
     snprintf(url, sizeof(url), "%s/devices/%s/jobs/%s/result",
@@ -56,6 +57,7 @@ static void post_job_result(const char *request_id, const char *device_id,
     cJSON_AddStringToObject(b, "signature", sig_hex);
     cJSON_AddStringToObject(b, "cert",      cert_pem);
     cJSON_AddStringToObject(b, "status",    status);
+    cJSON_AddStringToObject(b, "algorithm", algorithm ? algorithm : "");
     cJSON_AddStringToObject(b, "error",     error);
     char *bj = cJSON_PrintUnformatted(b);
     cJSON_Delete(b);
@@ -105,17 +107,18 @@ static void process_signing_job(cJSON *job)
     ESP_LOGI(TAG, "job %s recibido, validando token", rid);
     if (policy_validate_token(kuser, ts, nonce) != ESP_OK) {
         ESP_LOGW(TAG, "job %s: token invalido/expirado", rid);
-        post_job_result(rid, device_id, "", "", "ERROR", "invalid or expired token");
+        post_job_result(rid, device_id, "", "", "ERROR", "invalid or expired token", "");
         return;
     }
 
     uint8_t digest[CRYPTO_DIGEST_SIZE];
     if (crypto_hex_to_bytes(dhex, digest, CRYPTO_DIGEST_SIZE) != ESP_OK) {
-        post_job_result(rid, device_id, "", "", "ERROR", "bad digest hex");
+        post_job_result(rid, device_id, "", "", "ERROR", "bad digest hex", "");
         return;
     }
 
-    uint8_t sig_der[CRYPTO_SIG_DER_MAX_SIZE];
+    uint8_t sig_der[CRYPTO_PK_SIG_MAX];      /* RSA-2048=256B, RSA-4096=512B, ECDSA<=72B */
+    char    algo[40] = "ECDSA-P256-SHA256-DER";   /* algoritmo reportado al server (multi-cert) */
     size_t  sig_len = 0;
     static char cert_pem[CERT_PEM_MAX_SIZE];   /* cabe cert del device y custodiado */
 
@@ -126,7 +129,7 @@ static void process_signing_job(cJSON *job)
     if (cidit && cJSON_IsNumber(cidit)) {
         int slot = (int)cJSON_GetNumberValue(cidit);
         if (!authhex) {
-            post_job_result(rid, device_id, "", "", "ERROR", "custody: missing auth");
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: missing auth", "");
             return;
         }
         /* auth = blob ECIES (hex); plaintext = JSON {"pass":"..","totp":"123456"}.
@@ -141,7 +144,7 @@ static void process_signing_job(cJSON *job)
         if (authblob) free(authblob);
         if (aerr != ESP_OK) {
             crypto_zeroize(plain, sizeof(plain));
-            post_job_result(rid, device_id, "", "", "ERROR", "custody: auth decrypt failed");
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: auth decrypt failed", "");
             return;
         }
         plain[plain_len] = 0;
@@ -150,7 +153,7 @@ static void process_signing_job(cJSON *job)
         const char *totp = aj ? cJSON_GetStringValue(cJSON_GetObjectItem(aj, "totp")) : NULL;
         if (!pass || !totp) {
             crypto_zeroize(plain, sizeof(plain)); if (aj) cJSON_Delete(aj);
-            post_job_result(rid, device_id, "", "", "ERROR", "custody: auth fields missing");
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: auth fields missing", "");
             return;
         }
         uint64_t now = (uint64_t)time(NULL);   /* hora del chip (NTP) */
@@ -160,27 +163,40 @@ static void process_signing_job(cJSON *job)
         if (aj) cJSON_Delete(aj);
         if (serr != ESP_OK) {
             ESP_LOGE(TAG, "job %s: custody_sign slot %d fallo (%d)", rid, slot, (int)serr);
-            post_job_result(rid, device_id, "", "", "ERROR", "custody sign failed (auth/totp)");
+            post_job_result(rid, device_id, "", "", "ERROR", "custody sign failed (auth/totp)", "");
             return;
         }
         if (custody_get_cert(slot, cert_pem, sizeof(cert_pem)) != ESP_OK) {
-            post_job_result(rid, device_id, "", "", "ERROR", "custody: cert not found");
+            post_job_result(rid, device_id, "", "", "ERROR", "custody: cert not found", "");
             return;
+        }
+        { int kk = CRYPTO_KEY_EC, bb = 256; custody_get_type(slot, &kk, &bb);
+          snprintf(algo, sizeof(algo), kk == CRYPTO_KEY_RSA ? "RSA-PKCS1v15-SHA256" : "ECDSA-P256-SHA256-DER");
+          /* si el job especifica sigType ("RSA-2048"/"EC P-256"), validar que coincide con la credencial */
+          const char *want = cJSON_GetStringValue(cJSON_GetObjectItem(job, "sigType"));
+          if (want && want[0]) {
+              char have[24]; crypto_sigtype_name(kk, bb, have, sizeof(have));
+              if (strcmp(want, have) != 0) {
+                  ESP_LOGW(TAG, "job %s: sigType '%s' != credencial '%s'", rid, want, have);
+                  post_job_result(rid, device_id, "", "", "ERROR", "sigType mismatch", "");
+                  return;
+              }
+          }
         }
     } else {
         if (vault_sign(digest, sig_der, &sig_len) != ESP_OK) {
             ESP_LOGE(TAG, "job %s: vault_sign fallo", rid);
-            post_job_result(rid, device_id, "", "", "ERROR", "sign failed");
+            post_job_result(rid, device_id, "", "", "ERROR", "sign failed", "");
             return;
         }
         cert_get_pem(cert_pem, sizeof(cert_pem));
     }
 
-    static char sig_hex[CRYPTO_SIG_DER_MAX_SIZE * 2 + 1];
+    static char sig_hex[CRYPTO_PK_SIG_MAX * 2 + 1];
     crypto_bytes_to_hex(sig_der, sig_len, sig_hex);
 
     ESP_LOGI(TAG, "job %s FIRMADO (sig_len=%d), posteando resultado", rid, (int)sig_len);
-    post_job_result(rid, device_id, sig_hex, cert_pem, "DONE", "");
+    post_job_result(rid, device_id, sig_hex, cert_pem, "DONE", "", algo);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -24,6 +24,10 @@
 #define XAMI_BUILD_NUMBER  "0"
 #endif
 
+#ifndef XAMI_MODEL
+#define XAMI_MODEL         "A1"   /* el CI puede sobreescribirlo por modelo (A1=software, A2=ATECC608B) */
+#endif
+
 /* "Xami v1.0.0 · build 15 · 9fac64c"  (· = \xC2\xB7 en UTF-8) */
 #define XAMI_VERSION_STRING \
     XAMI_PRODUCT_NAME " v" XAMI_VERSION \

@@ -11,8 +11,9 @@ import asyncio
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response
 
+from pydantic import BaseModel
 from signing import pades_polling, dev_pki
-from minihsm import pdf_jobs
+from minihsm import pdf_jobs, job_queue
 from minihsm.registry import registry
 
 router = APIRouter(prefix="/v1/signatures", tags=["signatures"])
@@ -155,3 +156,42 @@ def ca_pem():
     return Response(
         content=dev_pki.ca_cert_pem(), media_type="application/x-pem-file",
         headers={"Content-Disposition": 'attachment; filename="xami_dev_ca.pem"'})
+
+
+# ── Bloque 8 · Forma 1: firma de digest (el cliente arma el PAdES) ───────────────
+class DigestSignRequest(BaseModel):
+    digest:        str                 # SHA-256 en hex (64 chars)
+    device_id:     str | None = None
+    credential_id: int | None = None   # slot de credencial custodiada (None = clave del device)
+    auth:          str | None = None   # blob opaco (passphrase/TOTP cifrados para el chip)
+
+_DIGEST_TIMEOUT = 30.0
+_DIGEST_POLL    = 0.5
+
+@router.post("/digest")
+async def sign_digest(req: DigestSignRequest):
+    """Forma 1: el cliente arma el PAdES/CAdES/XAdES y manda SOLO el hash SHA-256.
+    El miniHSM firma (clave del device o credencial custodiada) y devolvemos
+    firma + cert + algoritmo, listos para que el cliente complete su contenedor."""
+    digest = (req.digest or "").strip().lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise HTTPException(400, "digest debe ser 64 hex (SHA-256)")
+    if req.credential_id is not None and not req.auth:
+        raise HTTPException(400, "credential_id requiere auth (passphrase/TOTP cifrados para el chip)")
+
+    dev = _resolve_device(req.device_id)
+    rid = job_queue.enqueue(dev, digest, req.credential_id, req.auth)
+    waited = 0.0
+    while waited < _DIGEST_TIMEOUT:
+        await asyncio.sleep(_DIGEST_POLL)
+        waited += _DIGEST_POLL
+        j = job_queue.get(dev, rid)
+        if j and j["status"] == job_queue.DONE:
+            r = j.get("result") or {}
+            return {"requestId": rid, "deviceId": dev, "status": "DONE",
+                    "signature": r.get("signature", ""), "cert": r.get("cert", ""),
+                    "algorithm": r.get("algorithm") or "ECDSA-P256-SHA256-DER"}
+        if j and j["status"] == job_queue.ERROR:
+            r = j.get("result") or {}
+            raise HTTPException(502, f"el device reporto error: {r.get('error','')}")
+    raise HTTPException(504, "el device no firmo dentro del tiempo limite")

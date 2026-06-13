@@ -49,20 +49,22 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
         snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"missing fields\"}"); rc = ESP_ERR_INVALID_ARG;
     } else if (strcmp(secret, s_secret) != 0){
         snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"bad ceremony secret\"}"); rc = ESP_ERR_INVALID_STATE;
-    } else if (strlen(privh) != CRYPTO_PRIVKEY_SIZE * 2){
+    } else if (strlen(privh) < 64 || strlen(privh) > CUSTODY_PRIV_DER_MAX * 2 || (strlen(privh) & 1)){
         snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"bad priv\"}"); rc = ESP_ERR_INVALID_ARG;
     }
 
     if (rc == ESP_OK){
         if (!alias || !alias[0]) alias = s_alias;
-        uint8_t priv[CRYPTO_PRIVKEY_SIZE];
-        if (crypto_hex_to_bytes(privh, priv, CRYPTO_PRIVKEY_SIZE) != ESP_OK){
+        size_t priv_len = strlen(privh) / 2;
+        uint8_t *priv_der = malloc(priv_len);
+        if (!priv_der || crypto_hex_to_bytes(privh, priv_der, priv_len) != ESP_OK){
+            free(priv_der);
             snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"bad priv hex\"}"); rc = ESP_ERR_INVALID_ARG;
         } else {
             uint8_t seed[CUSTODY_TOTP_SEED_LEN]; size_t seed_len = sizeof(seed); int slot = -1;
-            rc = custody_add(alias, priv, cert, (const uint8_t*)pass, strlen(pass),
+            rc = custody_add(alias, priv_der, priv_len, cert, (const uint8_t*)pass, strlen(pass),
                              seed, &seed_len, &slot);
-            crypto_zeroize(priv, sizeof(priv));
+            crypto_zeroize(priv_der, priv_len); free(priv_der);
             if (rc != ESP_OK){
                 snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"custody_add failed\"}");
             } else {

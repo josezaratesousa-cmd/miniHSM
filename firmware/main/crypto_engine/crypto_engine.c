@@ -5,6 +5,9 @@
 
 #include "esp_log.h"
 #include "psa/crypto.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/md.h"
+#include "esp_random.h"
 
 static const char *TAG = "crypto_engine";
 static int s_initialized = 0;
@@ -252,4 +255,82 @@ void crypto_zeroize(void *buf, size_t len)
 {
     volatile uint8_t *p = (volatile uint8_t *)buf;
     while (len--) *p++ = 0;
+}
+
+/* RNG para mbedtls (HW RNG del ESP32-S3; buena entropia con radio activa). */
+static int crypto_rng_cb(void *ctx, unsigned char *buf, size_t len) {
+    (void)ctx; esp_fill_random(buf, len); return 0;
+}
+
+/* Firma un digest SHA-256 con una clave en PKCS#8 DER (RSA o EC). mbedtls_pk detecta el tipo:
+   RSA -> PKCS#1 v1.5 ; EC -> ECDSA DER. */
+esp_err_t crypto_pk_sign(const uint8_t *pk8_der, size_t der_len, const uint8_t *digest,
+                         uint8_t *sig_out, size_t sig_cap, size_t *sig_len_out) {
+    if (!pk8_der || !digest || !sig_out || !sig_len_out) return ESP_ERR_INVALID_ARG;
+    mbedtls_pk_context pk;
+    mbedtls_pk_init(&pk);
+    int ret = mbedtls_pk_parse_key(&pk, pk8_der, der_len, NULL, 0, crypto_rng_cb, NULL);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "mbedtls_pk_parse_key: -0x%04x", (unsigned)(-ret));
+        mbedtls_pk_free(&pk);
+        return ESP_FAIL;
+    }
+    ret = mbedtls_pk_sign(&pk, MBEDTLS_MD_SHA256, digest, CRYPTO_DIGEST_SIZE,
+                          sig_out, sig_cap, sig_len_out, crypto_rng_cb, NULL);
+    mbedtls_pk_free(&pk);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "mbedtls_pk_sign: -0x%04x", (unsigned)(-ret));
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+/* Detecta el tipo de clave de un PKCS#8 DER sin firmar (para listar/reportar el algoritmo). */
+esp_err_t crypto_pk_type(const uint8_t *pk8_der, size_t der_len, int *kind_out, int *bits_out) {
+    if (!pk8_der || !kind_out) return ESP_ERR_INVALID_ARG;
+    mbedtls_pk_context pk;
+    mbedtls_pk_init(&pk);
+    int ret = mbedtls_pk_parse_key(&pk, pk8_der, der_len, NULL, 0, crypto_rng_cb, NULL);
+    if (ret != 0) { mbedtls_pk_free(&pk); return ESP_FAIL; }
+    mbedtls_pk_type_t t = mbedtls_pk_get_type(&pk);
+    if (t == MBEDTLS_PK_RSA)                              *kind_out = CRYPTO_KEY_RSA;
+    else if (t == MBEDTLS_PK_ECKEY || t == MBEDTLS_PK_ECDSA) *kind_out = CRYPTO_KEY_EC;
+    else                                                 *kind_out = CRYPTO_KEY_UNKNOWN;
+    if (bits_out) *bits_out = (int)mbedtls_pk_get_bitlen(&pk);
+    mbedtls_pk_free(&pk);
+    return ESP_OK;
+}
+
+/* "EC P-256" / "RSA-2048" / ... a partir de kind+bits. */
+void crypto_sigtype_name(int kind, int bits, char *out, size_t cap) {
+    if (kind == CRYPTO_KEY_RSA) {
+        snprintf(out, cap, "RSA-%d", bits);
+    } else if (kind == CRYPTO_KEY_EC) {
+        const char *c = (bits==256)?"P-256":(bits==384)?"P-384":(bits==521)?"P-521":"EC";
+        snprintf(out, cap, "EC %s", c);
+    } else {
+        snprintf(out, cap, "unknown");
+    }
+}
+
+/* Firma raw r||s (64B) para COSE/ES256 (sin conversion a DER). */
+esp_err_t crypto_sign_raw(const uint8_t *digest, const uint8_t *privkey, uint8_t *raw_out) {
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+    psa_key_attributes_t attrs = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+    psa_set_key_bits(&attrs, 256);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_HASH);
+    psa_set_key_algorithm(&attrs, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+    psa_key_id_t key_id;
+    psa_status_t status = psa_import_key(&attrs, privkey, CRYPTO_PRIVKEY_SIZE, &key_id);
+    if (status != PSA_SUCCESS) { ESP_LOGE(TAG, "psa_import_key(raw) failed: %d", (int)status); return ESP_FAIL; }
+    size_t raw_len = 0;
+    status = psa_sign_hash(key_id, PSA_ALG_ECDSA(PSA_ALG_SHA_256),
+                           digest, CRYPTO_DIGEST_SIZE, raw_out, CRYPTO_SIG_RAW_SIZE, &raw_len);
+    psa_destroy_key(key_id);
+    if (status != PSA_SUCCESS || raw_len != CRYPTO_SIG_RAW_SIZE) {
+        ESP_LOGE(TAG, "psa_sign_hash(raw) failed: %d len=%d", (int)status, (int)raw_len);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }

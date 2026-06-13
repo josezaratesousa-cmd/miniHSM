@@ -71,6 +71,21 @@ def _load_cert_pem(pem_data):
     return _asn1_x509.Certificate.load(der)
 
 
+def _sig_size_for_cert(cert) -> int:
+    """Placeholder de firma para el dry_run de pyhanko, segun el algoritmo del cert:
+    RSA -> modulo/8 (RSA-2048=256); EC -> DER ECDSA (P-256~72). Si el placeholder es
+    menor que la firma real, pyhanko reserva poco /Contents y la firma no entra."""
+    try:
+        pk = cert.public_key
+        if pk.algorithm == 'rsa':
+            return (pk.bit_size + 7) // 8
+        if pk.algorithm == 'ec':
+            return 2 * ((pk.bit_size + 7) // 8) + 8
+    except Exception:
+        pass
+    return 72
+
+
 class PollingSigner(signers.Signer):
     """pyhanko Signer que delega la firma al miniHSM por la cola de polling.
     credential_id != None -> firma con una credencial CUSTODIADA del chip (su cert
@@ -93,7 +108,7 @@ class PollingSigner(signers.Signer):
     async def async_sign_raw(self, data: bytes, digest_algorithm: str,
                              dry_run: bool = False) -> bytes:
         if dry_run:
-            return bytes(72)
+            return bytes(_sig_size_for_cert(self.signing_cert))
         algo = str(digest_algorithm).lower().replace("-", "")
         if algo != "sha256":
             raise NotImplementedError(

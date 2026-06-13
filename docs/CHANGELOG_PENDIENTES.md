@@ -1638,3 +1638,101 @@ la clave se valida por OID (ecPublicKey 1.2.840.10045.2.1) y longitud de escalar
 mensaje claro "no es EC P-256, el chip solo custodia P-256". Validado: EC OK, RSA rechazado limpio.
 DEUDA TECNICA: soporte RSA en custody_sign (el chip hoy solo firma P-256 ECDSA). Muchas
 credenciales de firma reales son RSA -> evaluar firma RSA en el firmware como feature futura.
+
+### CUSTODIA — soporte RSA + P-256 (PKCS#8 + mbedtls_pk) — 2026-06-12
+Los certificados de firma reales suelen ser RSA. El chip ahora custodia y firma RSA *y* EC P-256.
+- R1 firmware:
+  * crypto_engine: crypto_pk_sign(pk8_der, len, digest, sig, cap, &slen) via mbedtls_pk_parse_key +
+    mbedtls_pk_sign (RSA -> PKCS#1 v1.5 ; EC -> ECDSA DER). RNG = esp_fill_random. CRYPTO_PK_SIG_MAX=512.
+  * custody_manager: guarda la priv como PKCS#8 DER (longitud variable, malloc; meta.priv_len).
+    custody_add(alias, priv_der, priv_der_len, ...). custody_sign descifra el PKCS#8 y firma con
+    crypto_pk_sign. CUSTODY_PRIV_DER_MAX=2048 (RSA-2048/3072; RSA-4096 necesitaria subirlo).
+  * ceremony: priv ahora es PKCS#8 hex variable (no escalar de 32B).
+  * heartbeat: sig buffer -> CRYPTO_PK_SIG_MAX; stack del task -> 16384 (RSA + mbedtls + TLS POST).
+  * Validado: concepto PKCS#8 sign+verify (EC y RSA) contra el cert; syntax-check custody/ceremony OK.
+- R2 navegador (app.js): openP12 devuelve el PKCS#8 DER (RSA: wrapRsaPrivateKey(privateKeyToAsn1(key));
+  EC: kb.asn1 ya es PKCS#8). Sin restriccion P-256. Validado: ambos PKCS#8 parsean+firman+verifican.
+- PENDIENTE R3 (server/pyhanko): construir la firma PAdES con el algoritmo del cert (RSA o ECDSA)
+  al recibir la firma del device. Sin R3, la ceremonia+custody_add ya funciona; falta firmar PDF RSA.
+- DEUDA: dimensionar NVS (RSA ~1.2KB/cred + cert ~2KB -> pocas creds en los 24KB por defecto).
+
+### ATESTACION VERIFICABLE — capa base (Bloque 0/1/2) — 2026-06-12 [IMPLEMENTADO, sin compilar aun]
+Principio transversal (Bloque 7, lineas 559-564): toda entrega de informacion externa
+(/device, /health, /audit) es una atestacion verificable. Se hace en 3 capas compartidas:
+envelope (B0) + proof COSE (B3) + sellado blockchain (B7, lado server).
+- Bloque 0 (envelope): helpers en network_engine.c -> att_device_name ("Xami-<MODELO>-<id>"),
+  att_firmware_obj ({version,build,release}), att_add_time ("time" ISO8601 UTC o null + "timeSynced").
+- Bloque 1 (/health): status, device, model, firmware{version,build,release}, cert(self-signed/
+  ca-signed), uptime, opCount, time, timeSynced, secureBoot. (cJSON; antes era snprintf plano.)
+- Bloque 2 (/device): deviceId "Xami-A1-<id>", firmware estructurado, + envelope de tiempo.
+  pubkey/curve/sigFormat se mantienen planos (fiel al Bloque 2; NO se agrego array de credenciales).
+- XAMI_MODEL definido en version.h (default "A1", #ifndef para que el CI lo sobreescriba).
+- Validado: helpers compilan (gcc -fsyntax-only con stubs); handlers coherentes.
+- PENDIENTE B3 (proof COSE): requiere cerrar las 4 decisiones abiertas del Bloque 3
+  (DID, frescura, canonicalizacion, libreria CBOR). Recomendacion: did:key, ambas frescuras,
+  CBOR deterministico (RFC8949 4.2.1), QCBOR+t_cose o encoder COSE_Sign1 minimo sobre mbedtls.
+- El array de credenciales custodiadas (alias + sigType + cert) iria en credentialSubject de la
+  VC (B3), NO como JSON suelto. Documentar en B3 antes de implementarlo.
+
+### MULTI-CERT DE FIRMADO (chip) + receta COSE para Bloque 3 — 2026-06-12 [IMPLEMENTADO core, sin compilar]
+NUCLEO MULTI-CERT (firmware, hecho):
+- crypto_engine: crypto_pk_type(pk8_der) -> {kind: 0=EC/1=RSA, bits}; crypto_sigtype_name(kind,bits)
+  -> "EC P-256"/"RSA-2048". (mbedtls_pk_get_type + get_bitlen.)
+- custody_manager: meta guarda sig_kind+sig_bits (detectados en custody_add via crypto_pk_type;
+  rechaza PKCS#8 invalido). custody_get_type(slot,&kind,&bits) para listar/reportar sin passphrase.
+- heartbeat/process_signing_job: la credencial se elige por credentialId(=slot) [ya existia];
+  ahora ademas reporta "algorithm" en el resultado (RSA-PKCS1v15-SHA256 vs ECDSA-P256-SHA256-DER)
+  segun el tipo de la credencial -> el server (R3) sabe armar el PAdES. post_job_result lleva
+  el campo "algorithm". Si el job trae "sigType" ("RSA-2048"/"EC P-256"), el chip valida que
+  coincide con la credencial elegida (sigType mismatch -> ERROR).
+- IMPLICACION SERVER (pendiente, no es chip): el API de xami.run que encola el job debe mandar
+  credentialId (cert a usar) y opcionalmente sigType. Y R3: usar "algorithm"/cert para el PAdES.
+
+BLOQUE 3 — decisiones cerradas + receta COSE validada en contenedor:
+- Decisiones: DID=did:key, frescura=ambas (timestamp + /device/challenge), CBOR deterministico
+  (RFC8949 4.2.1), encoder COSE_Sign1 MINIMO A MANO sobre mbedtls (sin dependencia QCBOR/t_cose,
+  porque no se puede compilar ESP-IDF local; el a-mano se valida byte-a-byte contra pycose).
+- Receta COSE_Sign1 (validada: bytes identicos a pycose + verifica con cryptography):
+  * protected header bstr = h'a10126'  (CBOR {1:-7} = ES256)
+  * unprotected = mapa vacio {}
+  * payload = CBOR deterministico del mapa VC
+  * Sig_structure = CBOR(["Signature1", h'a10126', h'' (ext_aad vacio), payload])
+  * firma = ECDSA-P256 sobre SHA-256(Sig_structure), salida RAW r||s (64B, NO DER)
+  * COSE_Sign1 = CBOR tag(18) [ h'a10126', {}, payload, sig64 ]
+- credentialSubject de la VC incluye custodiedCredentials: array
+  [{alias, sigType, certFingerprint, certState}] (construido con custody_get_type + custody_get_*).
+  Aqui vive el "array de credenciales", DENTRO de la VC firmada (no como JSON suelto).
+- PENDIENTE B3 (firmware, lo que falta codear):
+  1. encoder CBOR minimo (text/bytes/array/map/int, orden deterministico).
+  2. did:key desde la pubkey P-256 (multicodec 0x1200 + punto comprimido 33B + base58btc 'z').
+  3. firma RAW r||s del device para COSE (hoy vault_sign da DER; exponer salida raw 64B).
+  4. endpoint GET /device/challenge (nonce de un solo uso) -> challenge en el payload.
+  5. /device emite la VC COSE_Sign1 (issuer/credentialSubject+custodiedCredentials/proof).
+
+### BLOQUE 3 — /device como Verifiable Credential con proof COSE — 2026-06-12 [IMPLEMENTADO, sin compilar]
+- crypto_engine: crypto_sign_raw(digest,privkey,raw64) -> firma raw r||s (PSA, sin DER) para ES256.
+- vault_manager: vault_sign_raw(digest,raw64) -> firma con la clave del device en raw (para la VC).
+- custody_manager: custody_get_fingerprint(slot,hex) expone el fingerprint (para custodiedCredentials).
+- NUEVO modulo firmware/main/attestation/ (attestation.c/.h), registrado en CMakeLists:
+  * encoder CBOR deterministico (cbw_*), base58btc, att_did_key (multicodec p256 + punto comprimido).
+  * att_payload (VC CBOR canonico), att_sig_structure, att_cose_sign1 — VALIDADOS byte-a-byte en
+    contenedor contra cbor2(canonical)+pycose; la firma verifica con cryptography.
+  * att_device_vc(challenge): pubkey->did:key, validFrom(NTP), credentialSubject con
+    custodiedCredentials [{alias,sigType,certFingerprint,certState}] recorriendo los slots,
+    Sig_structure->SHA256->vault_sign_raw->COSE_Sign1 (hex). Buffers static (httpd 1 worker).
+- network_engine:
+  * GET /device/challenge -> nonce de un solo uso (TTL 120s) para frescura (frescura B).
+  * GET /device?challenge=<nonce> valida el nonce (un solo uso + TTL) y lo mete en la VC;
+    /device ahora incluye "proof": {type:"CoseSign1ES256", did:"did:key:z..", cose:"<hex>"}.
+    Sin challenge, la VC usa solo validFrom (frescura A). Ambas frescuras soportadas.
+- Syntax-check: attestation.c OK (gcc stubs). Resto del chip ya validado en tandas previas.
+
+ESTADO CHIP (todo sin push, listo para UN build CI): RSA+P-256 (PKCS#8/mbedtls_pk) + multi-cert
+(tipo por credencial, job reporta algorithm y valida sigType) + endpoints estructurados (B0/B1/B2)
++ VC COSE con proof (B3). 
+
+PENDIENTE (lado SERVER xami.run, NO es firmware):
+- API que encola el job debe mandar credentialId (cert) y opcional sigType.
+- R3 PAdES: usar "algorithm"/cert del resultado para armar RSA (PKCS1v15) o ECDSA.
+- Verificador de la VC (decodificar COSE_Sign1, validar did:key + challenge) y sellado B7 (stamping.io).
+- Aplicar el mismo proof COSE a /health y /audit (att_* es reutilizable) — pendiente.

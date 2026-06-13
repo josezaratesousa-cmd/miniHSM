@@ -134,6 +134,19 @@ esp_err_t vault_sign(
     return err;
 }
 
+esp_err_t vault_sign_raw(const uint8_t *digest, uint8_t *raw_out)
+{
+    if (!s_loaded) return ESP_ERR_INVALID_STATE;
+    uint8_t privkey[CRYPTO_PRIVKEY_SIZE];
+    uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
+    esp_err_t err = nvs_load_keypair(privkey, pubkey);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "Failed to load privkey for raw signing"); return err; }
+    err = crypto_sign_raw(digest, privkey, raw_out);
+    crypto_zeroize(privkey, sizeof(privkey));
+    crypto_zeroize(pubkey, sizeof(pubkey));
+    return err;
+}
+
 /* -------------------------------------------------------------------------- */
 
 esp_err_t vault_get_pubkey(uint8_t *pubkey_out)

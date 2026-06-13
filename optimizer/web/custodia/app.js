@@ -66,23 +66,23 @@
     const certPem = "-----BEGIN CERTIFICATE-----\n" +
       b64.replace(/(.{64})/g, "$1\n").replace(/\n$/, "") + "\n-----END CERTIFICATE-----\n";
 
-    // clave: DEBE ser EC P-256 (el chip solo firma P-256)
+    // clave: extraer el PKCS#8 DER (RSA o EC). El chip lo parsea con mbedtls_pk y firma
+    // RSA (PKCS#1 v1.5) o ECDSA segun el tipo.
     let kb = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag }); kb = kb[forge.pki.oids.pkcs8ShroudedKeyBag] || [];
     if (!kb.length) { const k2 = p12.getBags({ bagType: forge.pki.oids.keyBag }); kb = k2[forge.pki.oids.keyBag] || []; }
     if (!kb.length) throw new Error("el .p12 no contiene clave privada");
-    const NO_P256 = "Esta credencial no es EC P-256 (parece RSA u otra). El chip solo custodia claves P-256; necesitas un .p12 con clave de curva P-256 (prime256v1).";
-    const pk8 = kb[0].asn1;
-    let algOid = "";
-    try { algOid = forge.asn1.derToOid(pk8.value[1].value[0].value); } catch (e) {}
-    if (algOid !== "1.2.840.10045.2.1") throw new Error(NO_P256);
-    let ecpk;
-    try { ecpk = forge.asn1.fromDer(pk8.value[2].value); } catch (e) { throw new Error("no pude leer la clave EC del .p12"); }
-    let priv;
-    try { priv = binToU8(ecpk.value[1].value); } catch (e) { throw new Error(NO_P256); }
-    if (priv.length === 33 && priv[0] === 0) priv = priv.slice(1);
-    if (priv.length < 32) { const pp = new Uint8Array(32); pp.set(priv, 32 - priv.length); priv = pp; }
-    if (priv.length !== 32) throw new Error("La clave EC no es P-256 (escalar de " + priv.length + " bytes). El chip solo custodia P-256.");
-    return { privHex: hex(priv), certPem };
+    let pk8Der;
+    if (kb[0].key) {
+      // RSA: forge parseo la clave -> reconstruir el PKCS#8 PrivateKeyInfo
+      try { pk8Der = forge.asn1.toDer(forge.pki.wrapRsaPrivateKey(forge.pki.privateKeyToAsn1(kb[0].key))).getBytes(); }
+      catch (e) { throw new Error("no pude reconstruir la clave RSA del .p12"); }
+    } else if (kb[0].asn1) {
+      // EC: kb.asn1 ya es el PKCS#8 PrivateKeyInfo
+      pk8Der = forge.asn1.toDer(kb[0].asn1).getBytes();
+    } else {
+      throw new Error("no pude leer la clave del .p12");
+    }
+    return { privHex: hex(binToU8(pk8Der)), certPem };
   }
   /* ---- UI ---- */
   const $ = id => document.getElementById(id);
