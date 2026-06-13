@@ -224,7 +224,7 @@
       const { privHex, certPem } = await openP12(buf, p12pass);
       setStatus("cifrando hacia el chip…");
       const payload = JSON.stringify({ secret: cer.secret, alias: cer.alias, cert: certPem, priv: privHex, pass });
-      const blob = await eciesEncrypt(cer.pubkey, enc.encode(payload));
+      const blob = await eciesEncrypt(cer.pubkey, new TextEncoder().encode(payload));
       setStatus("enviando al chip…");
       const res = await postCeremonyWithRetry(blob);
       if (res && res.ok) {
