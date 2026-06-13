@@ -145,7 +145,7 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_de
 esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
                        const char *totp_code, uint64_t unix_time,
                        const uint8_t *digest, uint8_t *sig_der_out, size_t *sig_der_len){
-    if (slot < 0 || slot >= CUSTODY_MAX_CREDS || !passphrase || !totp_code || !digest ||
+    if (slot < 0 || slot >= CUSTODY_MAX_CREDS || !passphrase || !digest ||
         !sig_der_out || !sig_der_len) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);   /* RW: actualiza anti-replay */
@@ -178,11 +178,14 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
     if (err==ESP_OK)
         err = cc_aead_decrypt(kek, twrap, twrap+NONCE_SIZE, CUSTODY_TOTP_SEED_LEN,
                               twrap+NONCE_SIZE+CUSTODY_TOTP_SEED_LEN, seed);
-    /* GATE: validar TOTP + anti-replay de ventana */
-    if (err==ESP_OK){
-        esp_err_t v = cc_totp_verify(seed, CUSTODY_TOTP_SEED_LEN, unix_time, 30, 6, 1, totp_code, &counter);
-        if (v != ESP_OK)            err = ESP_ERR_INVALID_STATE;   /* codigo invalido/expirado */
-        else if (counter <= last_tc) err = ESP_ERR_INVALID_STATE;  /* ventana ya usada (replay) */
+    /* GATE: validar TOTP + anti-replay (solo modo autorizacion; agente firma sin TOTP) */
+    if (err==ESP_OK && m.mode == 1){
+        if (!totp_code) { err = ESP_ERR_INVALID_ARG; }            /* autorizacion exige codigo */
+        else {
+            esp_err_t v = cc_totp_verify(seed, CUSTODY_TOTP_SEED_LEN, unix_time, 30, 6, 1, totp_code, &counter);
+            if (v != ESP_OK)            err = ESP_ERR_INVALID_STATE;   /* codigo invalido/expirado */
+            else if (counter <= last_tc) err = ESP_ERR_INVALID_STATE;  /* ventana ya usada (replay) */
+        }
     }
     crypto_zeroize(seed, sizeof(seed));
     /* descifrar priv y firmar */
@@ -196,7 +199,7 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
     if (err==ESP_OK) err = crypto_pk_sign(priv_der, m.priv_len, digest, sig_der_out, CRYPTO_PK_SIG_MAX, sig_der_len);
     crypto_zeroize(priv_der, m.priv_len); free(priv_der);
 
-    if (err==ESP_OK){ key_for(k, slot, "tc"); nvs_set_u64(h, k, counter); nvs_commit(h); } /* anti-replay */
+    if (err==ESP_OK && m.mode == 1){ key_for(k, slot, "tc"); nvs_set_u64(h, k, counter); nvs_commit(h); } /* anti-replay (modo autorizacion) */
     nvs_close(h);
     return err;
 }

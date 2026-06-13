@@ -151,7 +151,8 @@ static void process_signing_job(cJSON *job)
         cJSON *aj = cJSON_Parse((char*)plain);
         const char *pass = aj ? cJSON_GetStringValue(cJSON_GetObjectItem(aj, "pass")) : NULL;
         const char *totp = aj ? cJSON_GetStringValue(cJSON_GetObjectItem(aj, "totp")) : NULL;
-        if (!pass || !totp) {
+        int cmode = 0; custody_get_mode(slot, &cmode);   /* 0=agente, 1=autorizacion */
+        if (!pass || (cmode == 1 && !totp)) {
             crypto_zeroize(plain, sizeof(plain)); if (aj) cJSON_Delete(aj);
             post_job_result(rid, device_id, "", "", "ERROR", "custody: auth fields missing", "");
             return;
