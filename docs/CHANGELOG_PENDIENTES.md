@@ -1838,3 +1838,16 @@ firma de otra clave. Contrato fijado:
 - Capacidad real: entrada ~210B + firma 64B ~= 274B -> ~3800 entradas/1MB (antes se estimo de mas).
 - Implementacion C: reusar attestation/ con variante detached (payload nil; firmar Sig_structure
   con el payload externo). Misma op ECDSA P-256 de hoy; solo suma el wrap CBOR.
+
+### Cambios acordados (2026-06-13) — custodia/firma + nuevo servicio Wallet EVM
+CUSTODIA / FIRMA (opcion B, toca firmware -> build app-only):
+- /device expone por credencial: slot, alias, modo, sigType, cert PEM + cert DESGLOSADO
+  (subject CN/O, issuer, serial, notBefore/notAfter, fingerprint). En claro (el cert es publico);
+  la priv jamas se expone. El cliente en LAN lee /device y arma el selector de firma.
+- Flag de MODO por credencial, elegido en la ceremonia: "agente" (desatendido, firma solo con
+  passphrase) o "autorizacion" (interactivo, exige TOTP en cada firma). El chip exige el TOTP
+  segun el flag. (Explica por que hoy no se pedia el TOTP: ninguna credencial estaba marcada.)
+- /firmar (demo en LAN) lee /device -> selector -> manda credential_id (slot) + credential_cert
+  (PEM) + auth (pass [+ totp]) a /v1/signatures/pdf. El server ya soporta esos campos.
+WALLET EVM: ver docs/DISENO_WALLET_EVM.md (modulo nuevo wallet_manager/, secp256k1, BIP-39/32,
+  crear/derivar/importar/firmar, ECIES a pubkey efimera del cliente, derived/imported, rotacion ERC-1056).
