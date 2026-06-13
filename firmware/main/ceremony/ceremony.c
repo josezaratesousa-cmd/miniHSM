@@ -29,10 +29,10 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
     if (!s_armed){ snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"no ceremony armed\"}");
                    return ESP_ERR_INVALID_STATE; }
 
-    uint8_t *plain = malloc(2560);    /* cert PEM ~1-2KB + priv + pass */
+    uint8_t *plain = malloc(8192);    /* RSA priv PKCS8 hex ~2.4KB + cert PEM + pass */
     if (!plain){ snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"no mem\"}"); return ESP_ERR_NO_MEM; }
     size_t plain_len = 0;
-    esp_err_t err = match_ecies_decrypt(blob, blob_len, plain, 2559, &plain_len);
+    esp_err_t err = match_ecies_decrypt(blob, blob_len, plain, 8191, &plain_len);
     if (err != ESP_OK){ free(plain); snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"decrypt failed\"}");
                         return err; }
     plain[plain_len] = 0;
@@ -80,7 +80,7 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
         }
     }
 
-    crypto_zeroize(plain, 2560); free(plain);
+    crypto_zeroize(plain, 8192); free(plain);
     if (j) cJSON_Delete(j);
     return rc;
 }

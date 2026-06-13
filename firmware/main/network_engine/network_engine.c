@@ -608,7 +608,7 @@ static esp_err_t handler_ceremony(httpd_req_t *req)
 {
     char resp[320];
     int total = req->content_len;
-    if (total <= 0 || total > 4096) {
+    if (total <= 0 || total > 8192) {
         httpd_resp_set_type(req, "application/json");
         httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"bad length\"}");
         return ESP_OK;

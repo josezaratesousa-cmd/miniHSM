@@ -1743,3 +1743,7 @@ PENDIENTE (lado SERVER xami.run, NO es firmware):
   Fix: mbedtls_ecp_keypair_calc_public(pk, rng) tras read_key (+RNG a los 2 llamadores).
   Verificado el sintoma con asn1crypto sobre /cert y /csr del build 43.
 - [PENDIENTE] network_engine: el ESP_LOGI de endpoints no lista /device/challenge (cosmetico).
+- [APLICADO en codigo, SIN pushear] ceremonia RSA no cabia (POST /ceremony -> "bad length"):
+  handler_ceremony (limite 4096) y ceremony_process plain buffer (2560) dimensionados para EC.
+  RSA-2048 priv PKCS8 hex (~2.4KB) + cert PEM no caben. Fix: ambos buffers a 8192
+  (cubre RSA-2048/3072; RSA-4096 ademas necesitaria subir CUSTODY_PRIV_DER_MAX de 2048).
