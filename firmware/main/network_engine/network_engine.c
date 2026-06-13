@@ -27,6 +27,7 @@
 #include "wifi_provision.h"
 #include "ceremony.h"
 #include "attestation.h"
+#include "custody_manager.h"
 #include "esp_system.h"
 #include "esp_random.h"
 
@@ -443,6 +444,28 @@ static esp_err_t handler_device(httpd_req_t *req)
         cJSON_AddStringToObject(proof, "cose", cose_hex);
         cJSON_AddItemToObject(resp, "proof", proof);
     }
+
+    /* credenciales custodiadas (slot+cert para el selector de /firmar en LAN) */
+    cJSON *creds = cJSON_CreateArray();
+    for (int cs = 0; cs < CUSTODY_MAX_CREDS; cs++) {
+        char al[CUSTODY_ALIAS_MAX];
+        if (custody_get_alias(cs, al, sizeof(al)) != ESP_OK) continue;
+        cJSON *cc = cJSON_CreateObject();
+        cJSON_AddNumberToObject(cc, "slot", cs);
+        cJSON_AddStringToObject(cc, "alias", al);
+        int kk = 0, bb = 0; char st[24];
+        custody_get_type(cs, &kk, &bb);
+        crypto_sigtype_name(kk, bb, st, sizeof(st));
+        cJSON_AddStringToObject(cc, "sigType", st);
+        char fp[65];
+        if (custody_get_fingerprint(cs, fp, sizeof(fp)) == ESP_OK)
+            cJSON_AddStringToObject(cc, "fingerprint", fp);
+        static char pem[CUSTODY_CERT_MAX];
+        if (custody_get_cert(cs, pem, sizeof(pem)) == ESP_OK)
+            cJSON_AddStringToObject(cc, "certPem", pem);
+        cJSON_AddItemToArray(creds, cc);
+    }
+    cJSON_AddItemToObject(resp, "credentials", creds);
 
     char *s = cJSON_PrintUnformatted(resp);
     send_json(req, 200, s);
