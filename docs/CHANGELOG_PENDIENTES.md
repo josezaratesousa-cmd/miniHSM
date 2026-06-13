@@ -1747,3 +1747,46 @@ PENDIENTE (lado SERVER xami.run, NO es firmware):
   handler_ceremony (limite 4096) y ceremony_process plain buffer (2560) dimensionados para EC.
   RSA-2048 priv PKCS8 hex (~2.4KB) + cert PEM no caben. Fix: ambos buffers a 8192
   (cubre RSA-2048/3072; RSA-4096 ademas necesitaria subir CUSTODY_PRIV_DER_MAX de 2048).
+
+## BLOQUE 6 — DECISIONES CERRADAS (audit firmado + sellado) — 2026-06-13
+Cierra el diseno de B6. Decisiones discutidas y aprobadas:
+
+### Rotacion y retencion
+- Rotacion DIARIA (un segmento por dia). Retencion objetivo: 12 meses.
+- Tope DURO = tamano reservado de la particion (1 MB). Lo que ocurra primero
+  (12 meses o 1 MB) -> descarta los dias mas viejos, conserva lo mas reciente.
+
+### Persistencia
+- Particion audit dedicada: subir de 128KB (0x20000) a 1 MB (0x100000) en
+  partitions.csv (espacio de sobra en 16 MB; quedaria 0x1D0000-0x2D0000).
+- Dimensionado: entrada ~210 B -> ~5000 en 1 MB; formato compacto (sin UUID 37B /
+  digest 65B cuando no aplique) ~100 B -> ~10000.
+- NVS no es ideal para append de 1 MB (overhead k-v): usar log crudo circular o
+  FS ligero (LittleFS). A definir al implementar.
+
+### Atestacion — hash unico de todo el log
+- UN hash canonico (JCS/RFC 8785) de TODO el log retenido = logHash. Ese logHash
+  es lo que se FIRMA (dentro de attestation). Fresco por consulta; stateless.
+- Respuesta (igual que B7):
+  { data:{log:{from,to,count,entries[...]}},
+    attestation:{device, issuedAt(UTC), hash(=logHash), signature},
+    stamping:{trxid,recipient,blockhash,nonce,timestamp} }
+- evidence para stamping.io (B7) = hash de la attestation firmada.
+
+### Formato de firma — DECISION: estandar, IGUAL que la VC del /device
+- La attestation se firma con COSE_Sign1/ES256 + did:key, EXACTAMENTE el mismo
+  mecanismo que la VC del /device (B3, modulo attestation/), validado byte-a-byte
+  vs pycose. Razon: estandar y consistente; NO depende del cert (que ademas tenia
+  el bug de SPKI vacio).
+- Cert X.509 del chip ADJUNTO opcional (cadena), pero el ancla de identidad es el
+  did:key del chip.
+
+### Anclaje de epoca (rotacion de clave)
+- Cada segmento ancla la pubkey/epoca de firma. Si la clave rota (re-ceremonia /
+  erase-flash -> nuevo device id), las entradas viejas siguen verificables vs su
+  pubkey de epoca; y el sello blockchain (B7) sobrevive a la rotacion.
+
+### Estado
+- DISENO (pendiente de implementar). Reusa el encoder COSE/CBOR/did:key del modulo
+  attestation/ (B3, ya en firmware). Implica: particion 1MB (partitions.csv), capa
+  de persistencia (FS/log crudo), firmado COSE del logHash, integracion con B7.
