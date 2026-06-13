@@ -1617,3 +1617,16 @@ si puede cargar un script https). Asi la logica vive en xami.run y la pagina hab
   WebCrypto (pkcs8->jwk.d); compara fingerprint chip-local vs xami.run (anti-impostor);
   POST /ceremony con reintento (espera el heartbeat que arma la ceremonia); muestra QR otpauth.
   Validado con node --check. PENDIENTE: probar forge con .p12 EC real en navegador.
+
+### CUSTODIA Fase 4 (UI) — FIX cripto JS puro (contexto http) — 2026-06-12
+La pagina la sirve el chip por http (192.168.x.x) -> NO es contexto seguro -> crypto.subtle
+(WebCrypto) NO existe -> fallaba sha256/ECIES/.p12 ("reading 'digest'"). Reescrita la cripto de
+app.js en JS PURO (forge + elliptic), sin tocar firmware ni reflashear:
+- sha256hex (forge.md.sha256), hmac256/hkdf32 (forge.hmac), eciesEncrypt (elliptic ECDH P-256
+  + hkdf32 + forge AES-GCM) -> blob eph65+iv12+ct+tag16, identico a crypto_match del server.
+- openP12: forge descifra el .p12 (PBES2/AES y legacy 3DES); cert y escalar P-256 se extraen del
+  asn1 crudo (cb.asn1 ES el cert X.509; kb.asn1 es PKCS#8 -> ECPrivateKey value[1]=scalar), porque
+  forge no construye el objeto de clave EC. La pass del .p12 no sale del navegador.
+- Validado en contenedor con el CODIGO EXACTO de app.js: openP12 (scalar+cert) OK, sha256 vector
+  OK, y ECIES interopera con Python/cryptography (descifra el payload {secret,alias,cert,priv,pass}).
+- Solo cambia app.js (live + repo). El usuario solo RECARGA http://<chip>/custodia, sin reflashear.

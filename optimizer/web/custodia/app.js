@@ -1,85 +1,79 @@
 /* Xami — Custodia: pagina de ceremonia (app.js)
- * La sirve el CHIP (origen http en la LAN); carga forge+qrcode de CDN, abre el .p12,
- * cifra {secret,alias,cert,priv,pass} via ECIES hacia la pubkey del chip y POSTea /ceremony.
- * La logica vive en xami.run; el chip solo la arranca. Deuda tecnica: version offline/AP (B). */
+ * La sirve el CHIP por http (NO es contexto seguro -> crypto.subtle no existe), por eso la
+ * cripto va en JS PURO (forge + elliptic), validada contra crypto_match del server.
+ * Abre el .p12 en el navegador (la pass no sale de aqui), cifra ECIES hacia la pubkey del
+ * chip y POSTea /ceremony. Deuda tecnica: version offline/AP (B). */
 (function () {
   "use strict";
   const API = "https://api.xami.run";
-  const CHIP = location.origin;                 // el chip sirve esta pagina
+  const CHIP = location.origin;
   const HKDF_INFO = "xami-match-v1";
   const CDN_FORGE = "https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js";
+  const CDN_EC    = "https://cdnjs.cloudflare.com/ajax/libs/elliptic/6.5.4/elliptic.min.js";
   const CDN_QR    = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
-  const enc = new TextEncoder();
 
   const hex = u8 => [...u8].map(b => b.toString(16).padStart(2, "0")).join("");
   const u8FromHex = h => { const a = new Uint8Array(h.length / 2);
     for (let i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16); return a; };
-  const b64urlToU8 = s => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "=";
-    const bin = atob(s); const a = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; };
+  const u8ToBin = u => { let s = ""; for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return s; };
+  const binToU8 = b => Uint8Array.from(b, c => c.charCodeAt(0));
   const loadScript = src => new Promise((res, rej) => {
     const s = document.createElement("script"); s.src = src;
     s.onload = res; s.onerror = () => rej(new Error("no se pudo cargar " + src));
     document.head.appendChild(s); });
-  const sha256hex = async u8 => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", u8)));
 
-  /* ECIES — replica exacta de crypto_match.ecies_encrypt:
-     blob = eph_pub(65) || iv(12) || ct||tag ; HKDF-SHA256 salt=32x00 info="xami-match-v1" ; AES-256-GCM */
-  async function eciesEncrypt(pubHex, plaintextU8) {
-    const chipPub = await crypto.subtle.importKey("raw", u8FromHex(pubHex),
-      { name: "ECDH", namedCurve: "P-256" }, false, []);
-    const eph = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
-    const ephPubRaw = new Uint8Array(await crypto.subtle.exportKey("raw", eph.publicKey));
-    const shared = new Uint8Array(await crypto.subtle.deriveBits(
-      { name: "ECDH", public: chipPub }, eph.privateKey, 256));
-    const hk = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveBits"]);
-    const keyBits = await crypto.subtle.deriveBits(
-      { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info: enc.encode(HKDF_INFO) }, hk, 256);
-    const aesKey = await crypto.subtle.importKey("raw", keyBits, "AES-GCM", false, ["encrypt"]);
+  /* Cripto JS puro (forge + elliptic) — funciona en http. Validada contra el server. */
+  function sha256hex(u8) { const md = forge.md.sha256.create(); md.update(u8ToBin(u8)); return md.digest().toHex(); }
+  function hmac256(keyBin, msgBin) { const h = forge.hmac.create(); h.start("sha256", keyBin); h.update(msgBin); return h.digest().getBytes(); }
+  function hkdf32(ikmBin, saltBin, info) { const prk = hmac256(saltBin, ikmBin); return hmac256(prk, info + String.fromCharCode(1)).substring(0, 32); }
+
+  /* ECIES — replica exacta de crypto_match.ecies_encrypt: blob = eph_pub65 || iv12 || ct||tag16 ;
+     ECDH P-256 -> HKDF-SHA256 salt=32x00 info="xami-match-v1" -> AES-256-GCM */
+  function eciesEncrypt(pubHex, plaintextU8) {
+    const ec = new elliptic.ec("p256");
+    const chip = ec.keyFromPublic(pubHex, "hex");
+    const eph = ec.genKeyPair();
+    const ephPub = new Uint8Array(eph.getPublic().encode("array", false));
+    const shared = new Uint8Array(eph.derive(chip.getPublic()).toArray("be", 32));
+    const keyBin = hkdf32(u8ToBin(shared), u8ToBin(new Uint8Array(32)), HKDF_INFO);
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ctTag = new Uint8Array(await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv, tagLength: 128 }, aesKey, plaintextU8));
+    const c = forge.cipher.createCipher("AES-GCM", keyBin);
+    c.start({ iv: u8ToBin(iv), tagLength: 128 });
+    c.update(forge.util.createBuffer(u8ToBin(plaintextU8)));
+    c.finish();
+    const ctTag = binToU8(c.output.getBytes() + c.mode.tag.getBytes());
     const blob = new Uint8Array(65 + 12 + ctTag.length);
-    blob.set(ephPubRaw, 0); blob.set(iv, 65); blob.set(ctTag, 77);
+    blob.set(ephPub, 0); blob.set(iv, 65); blob.set(ctTag, 77);
     return blob;
   }
 
-  /* Abre el .p12 en el navegador (la contrasena del .p12 NUNCA sale de aqui).
-     Devuelve { privHex (32B), certPem }. El chip solo firma P-256. */
-  async function openP12(arrayBuf, p12pass) {
-    const bytes = new Uint8Array(arrayBuf);
-    let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    const asn1 = forge.asn1.fromDer(forge.util.createBuffer(bin, "binary"));
+  /* Abre el .p12 (la contrasena NO sale del navegador). forge descifra (PBES2/AES y legacy);
+     el cert y el escalar P-256 se sacan del asn1 crudo (forge no arma el objeto de clave EC). */
+  function openP12(arrayBuf, p12pass) {
+    const bin = u8ToBin(new Uint8Array(arrayBuf));
     let p12;
-    try { p12 = forge.pkcs12.pkcs12FromAsn1(asn1, p12pass); }
+    try { p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(bin, "binary")), p12pass); }
     catch (e) { throw new Error("contrasena del .p12 incorrecta o archivo invalido"); }
 
-    let cb = p12.getBags({ bagType: forge.pki.oids.certBag });
-    cb = cb[forge.pki.oids.certBag] || [];
+    let cb = p12.getBags({ bagType: forge.pki.oids.certBag }); cb = cb[forge.pki.oids.certBag] || [];
     if (!cb.length) throw new Error("el .p12 no contiene certificado");
-    const certPem = forge.pki.certificateToPem(cb[0].cert).replace(/\r/g, "").trim();
+    const certDer = forge.asn1.toDer(cb[0].asn1).getBytes();         // cb.asn1 ES el cert X.509
+    const b64 = forge.util.encode64(certDer);
+    const certPem = "-----BEGIN CERTIFICATE-----\n" +
+      b64.replace(/(.{64})/g, "$1\n").replace(/\n$/, "") + "\n-----END CERTIFICATE-----\n";
 
-    let kb = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
-    kb = kb[forge.pki.oids.pkcs8ShroudedKeyBag] || [];
-    if (!kb.length) { const k2 = p12.getBags({ bagType: forge.pki.oids.keyBag });
-      kb = k2[forge.pki.oids.keyBag] || []; }
+    let kb = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag }); kb = kb[forge.pki.oids.pkcs8ShroudedKeyBag] || [];
+    if (!kb.length) { const k2 = p12.getBags({ bagType: forge.pki.oids.keyBag }); kb = k2[forge.pki.oids.keyBag] || []; }
     if (!kb.length) throw new Error("el .p12 no contiene clave privada");
-
-    const keyDer = forge.asn1.toDer(kb[0].asn1).getBytes();
-    const keyU8 = Uint8Array.from(keyDer, c => c.charCodeAt(0));
-    let jwk;
-    try {
-      const ck = await crypto.subtle.importKey("pkcs8", keyU8,
-        { name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
-      jwk = await crypto.subtle.exportKey("jwk", ck);
-    } catch (e) {
-      throw new Error("la clave no es EC P-256 (el chip solo custodia claves P-256)");
-    }
-    const priv = b64urlToU8(jwk.d);
+    let ecpk;
+    try { ecpk = forge.asn1.fromDer(kb[0].asn1.value[2].value); }     // PKCS#8 -> ECPrivateKey
+    catch (e) { throw new Error("no pude leer la clave EC del .p12"); }
+    let priv = binToU8(ecpk.value[1].value);
+    if (priv.length === 33 && priv[0] === 0) priv = priv.slice(1);
+    if (priv.length < 32) { const p = new Uint8Array(32); p.set(priv, 32 - priv.length); priv = p; }
     if (priv.length !== 32) throw new Error("escalar privado invalido (" + priv.length + " bytes)");
     return { privHex: hex(priv), certPem };
   }
-
   /* ---- UI ---- */
   const $ = id => document.getElementById(id);
   function setStatus(msg, kind) {
@@ -146,7 +140,7 @@
 
   async function boot() {
     injectUI();
-    try { await loadScript(CDN_FORGE); await loadScript(CDN_QR); }
+    try { await loadScript(CDN_FORGE); await loadScript(CDN_EC); await loadScript(CDN_QR); }
     catch (e) { setStatus("No se pudieron cargar las librerias (forge/qr). El chip debe estar en tu WiFi con internet.", "err"); }
     try {
       const d = await (await fetch(CHIP + "/device")).json();
