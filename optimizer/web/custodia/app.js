@@ -154,8 +154,8 @@
     catch (e) { setStatus("No se pudieron cargar las librerias (forge/qr). El chip debe estar en tu WiFi con internet.", "err"); }
     try {
       const d = await (await fetch(CHIP + "/device")).json();
-      chipPub = d.pubkey; chipDevId = d.deviceId;
-      $("cx-chip").textContent = "chip " + chipDevId + " · " + (d.firmware || "") + " · " + (d.curve || "P-256");
+      chipPub = d.pubkey; chipDevId = (String(d.deviceId||"").match(/[0-9a-f]{16}/i)||[d.deviceId])[0];
+      $("cx-chip").textContent = "chip " + chipDevId + " · " + ((d.firmware&&d.firmware.version)?d.firmware.version:(d.firmware||"?")) + " · " + (d.curve || "P-256");
     } catch (e) {
       $("cx-chip").textContent = "no se pudo contactar al chip (¿IP correcta? ¿misma WiFi?)";
     }
