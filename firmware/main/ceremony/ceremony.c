@@ -44,6 +44,8 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
     const char *cert   = j ? cJSON_GetStringValue(cJSON_GetObjectItem(j, "cert"))   : NULL;
     const char *privh  = j ? cJSON_GetStringValue(cJSON_GetObjectItem(j, "priv"))   : NULL;
     const char *pass   = j ? cJSON_GetStringValue(cJSON_GetObjectItem(j, "pass"))   : NULL;
+    cJSON *jmode = j ? cJSON_GetObjectItem(j, "mode") : NULL;
+    int wmode = (jmode && cJSON_IsNumber(jmode)) ? (int)cJSON_GetNumberValue(jmode) : 0;  /* 0=agente, 1=autorizacion */
 
     esp_err_t rc = ESP_OK;
     if (!secret || !cert || !privh || !pass){
@@ -64,7 +66,7 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
         } else {
             uint8_t seed[CUSTODY_TOTP_SEED_LEN]; size_t seed_len = sizeof(seed); int slot = -1;
             rc = custody_add(alias, priv_der, priv_len, cert, (const uint8_t*)pass, strlen(pass),
-                             seed, &seed_len, &slot);
+                             seed, &seed_len, &slot, wmode);
             crypto_zeroize(priv_der, priv_len); free(priv_der);
             if (rc != ESP_OK){
                 ESP_LOGE(TAG, "custody_add rc=0x%x (%s) priv_len=%u", rc, esp_err_to_name(rc), (unsigned)priv_len);

@@ -26,7 +26,8 @@ typedef struct {
     uint8_t  sig_kind;   /* 0=EC, 1=RSA (crypto_key_kind_t) */
     uint16_t priv_len;   /* longitud del PKCS#8 DER (RSA ~1.2KB, EC ~138B) */
     uint16_t sig_bits;   /* 256, 2048, ... */
-    uint8_t  rsv[2];
+    uint8_t  mode;   /* 0=agente (sin TOTP), 1=autorizacion (TOTP por firma) */
+    uint8_t  rsv[1];
 } custody_meta_t;
 
 static void key_for(char *out, int slot, const char *suf){
@@ -68,7 +69,7 @@ static int find_free_slot(nvs_handle_t h){
 
 esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_der_len, const char *cert_pem,
                       const uint8_t *passphrase, size_t pass_len,
-                      uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out){
+                      uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out, int mode){
     if (!alias || !priv_der || !cert_pem || !passphrase || !slot_out) return ESP_ERR_INVALID_ARG;
     if (priv_der_len == 0 || priv_der_len > CUSTODY_PRIV_DER_MAX){ ESP_LOGE(TAG, "FAIL priv_der_len=%u fuera de rango (max %d)", (unsigned)priv_der_len, CUSTODY_PRIV_DER_MAX); return ESP_ERR_INVALID_ARG; }
     size_t cert_len = strlen(cert_pem);
@@ -85,6 +86,7 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_de
     esp_fill_random(m.salt, SALT_SIZE);
     crypto_sha256((const uint8_t*)cert_pem, cert_len, m.fingerprint);
     m.in_use = 1;
+    m.mode = (uint8_t)(mode ? 1 : 0);
     m.priv_len = (uint16_t)priv_der_len;
     {   int kind = CRYPTO_KEY_UNKNOWN, bits = 0;
         if (crypto_pk_type(priv_der, priv_der_len, &kind, &bits) != ESP_OK){ ESP_LOGE(TAG, "FAIL crypto_pk_type no parsea PKCS8 (priv_len=%u)", (unsigned)priv_der_len); nvs_close(h); return ESP_ERR_INVALID_ARG; }
@@ -265,4 +267,13 @@ esp_err_t custody_delete(int slot){
     nvs_close(h);
     ESP_LOGI(TAG, "credencial del slot %d eliminada", slot);
     return err;
+}
+
+esp_err_t custody_get_mode(int slot, int *mode_out){
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return ESP_FAIL;
+    custody_meta_t m; esp_err_t e = read_meta(h, slot, &m); nvs_close(h);
+    if (e != ESP_OK || !m.in_use) return ESP_FAIL;
+    if (mode_out) *mode_out = m.mode;
+    return ESP_OK;
 }

@@ -458,6 +458,8 @@ static esp_err_t handler_device(httpd_req_t *req)
         custody_get_type(cs, &kk, &bb);
         crypto_sigtype_name(kk, bb, st, sizeof(st));
         cJSON_AddStringToObject(cc, "sigType", st);
+        int md = 0;
+        if (custody_get_mode(cs, &md) == ESP_OK) cJSON_AddStringToObject(cc, "mode", md ? "autorizacion" : "agente");
         char fp[65];
         if (custody_get_fingerprint(cs, fp, sizeof(fp)) == ESP_OK)
             cJSON_AddStringToObject(cc, "fingerprint", fp);

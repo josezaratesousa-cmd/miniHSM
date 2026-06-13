@@ -23,7 +23,7 @@ int       custody_count(void);
    (longitud variable). El cert va en claro. */
 esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_der_len,
                       const char *cert_pem, const uint8_t *passphrase, size_t pass_len,
-                      uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out);
+                      uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out, int mode);
 
 /* Firma digest(32B) con la credencial del slot: descifra el PKCS#8 con la passphrase y firma
    con mbedtls_pk (RSA -> PKCS#1 v1.5 ; EC -> ECDSA DER). sig_der_out debe tener CRYPTO_PK_SIG_MAX.
@@ -35,6 +35,8 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
 /* Tipo de firma de la credencial del slot (sin passphrase). kind: 0=EC,1=RSA. bits=tamano.
    Para listar credenciales y reportar el algoritmo al server (multi-cert). */
 esp_err_t custody_get_type(int slot, int *kind_out, int *bits_out);
+/* Modo de la credencial: 0=agente (sin TOTP), 1=autorizacion (TOTP por firma). */
+esp_err_t custody_get_mode(int slot, int *mode_out);
 
 esp_err_t custody_get_cert(int slot, char *pem_out, size_t pem_cap);
 esp_err_t custody_get_alias(int slot, char *alias_out, size_t cap);
