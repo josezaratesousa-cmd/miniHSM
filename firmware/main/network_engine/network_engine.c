@@ -28,6 +28,7 @@
 #include "ceremony.h"
 #include "attestation.h"
 #include "custody_manager.h"
+#include "mbedtls/x509_crt.h"
 #include "esp_system.h"
 #include "esp_random.h"
 
@@ -461,8 +462,25 @@ static esp_err_t handler_device(httpd_req_t *req)
         if (custody_get_fingerprint(cs, fp, sizeof(fp)) == ESP_OK)
             cJSON_AddStringToObject(cc, "fingerprint", fp);
         static char pem[CUSTODY_CERT_MAX];
-        if (custody_get_cert(cs, pem, sizeof(pem)) == ESP_OK)
+        if (custody_get_cert(cs, pem, sizeof(pem)) == ESP_OK) {
             cJSON_AddStringToObject(cc, "certPem", pem);
+            mbedtls_x509_crt crt; mbedtls_x509_crt_init(&crt);
+            if (mbedtls_x509_crt_parse(&crt, (const unsigned char *)pem, strlen(pem) + 1) == 0) {
+                char dn[256];
+                if (mbedtls_x509_dn_gets(dn, sizeof(dn), &crt.subject) > 0) cJSON_AddStringToObject(cc, "subject", dn);
+                if (mbedtls_x509_dn_gets(dn, sizeof(dn), &crt.issuer)  > 0) cJSON_AddStringToObject(cc, "issuer", dn);
+                char ser[80];
+                if (mbedtls_x509_serial_gets(ser, sizeof(ser), &crt.serial) > 0) cJSON_AddStringToObject(cc, "serial", ser);
+                char vf[24], vt[24];
+                snprintf(vf, sizeof(vf), "%04d-%02d-%02dT%02d:%02d:%02dZ", crt.valid_from.year, crt.valid_from.mon,
+                         crt.valid_from.day, crt.valid_from.hour, crt.valid_from.min, crt.valid_from.sec);
+                snprintf(vt, sizeof(vt), "%04d-%02d-%02dT%02d:%02d:%02dZ", crt.valid_to.year, crt.valid_to.mon,
+                         crt.valid_to.day, crt.valid_to.hour, crt.valid_to.min, crt.valid_to.sec);
+                cJSON_AddStringToObject(cc, "notBefore", vf);
+                cJSON_AddStringToObject(cc, "notAfter", vt);
+            }
+            mbedtls_x509_crt_free(&crt);
+        }
         cJSON_AddItemToArray(creds, cc);
     }
     cJSON_AddItemToObject(resp, "credentials", creds);
