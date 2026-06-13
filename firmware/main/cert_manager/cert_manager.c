@@ -53,7 +53,8 @@ static esp_err_t nvs_load_cert(char *pem_out, cert_state_t *state_out)
 /* Carga la clave privada del vault en un mbedtls_pk_context.
  * Usa mbedtls_ecp_read_key() que carga la clave Y calcula Q (pubkey).
  * La clave raw se zeroiza antes de retornar. Caller debe mbedtls_pk_free(). */
-static int load_pk_from_vault(mbedtls_pk_context *pk)
+static int load_pk_from_vault(mbedtls_pk_context *pk,
+                              int (*f_rng)(void *, unsigned char *, size_t), void *p_rng)
 {
     uint8_t privkey[CRYPTO_PRIVKEY_SIZE];
     uint8_t pubkey[CRYPTO_PUBKEY_SIZE];
@@ -67,12 +68,15 @@ static int load_pk_from_vault(mbedtls_pk_context *pk)
     int ret = mbedtls_pk_setup(pk, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY));
     if (ret != 0) goto done;
 
-    /* mbedtls_ecp_read_key: carga privkey en el keypair y calcula Q.
-     * mbedtls_pk_ec() esta deprecated en mbedTLS 3.4+ pero funciona
-     * (el flag -Wno-error=deprecated-declarations lo permite). */
+    /* mbedtls_ecp_read_key carga d pero NO calcula Q en mbedTLS 3.x;
+     * derivamos Q con mbedtls_ecp_keypair_calc_public (sin esto el SPKI
+     * del cert/CSR sale vacio = punto al infinito). mbedtls_pk_ec() esta
+     * deprecated pero funciona (-Wno-error=deprecated-declarations). */
     ret = mbedtls_ecp_read_key(MBEDTLS_ECP_DP_SECP256R1,
                                 mbedtls_pk_ec(*pk),
                                 privkey, CRYPTO_PRIVKEY_SIZE);
+    if (ret == 0)
+        ret = mbedtls_ecp_keypair_calc_public(mbedtls_pk_ec(*pk), f_rng, p_rng);
 done:
     crypto_zeroize(privkey, sizeof(privkey));
     crypto_zeroize(pubkey,  sizeof(pubkey));
@@ -94,7 +98,7 @@ static esp_err_t generate_selfsigned(void)
     mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
                           (const unsigned char *)"minihsm_cert", 12);
 
-    if (load_pk_from_vault(&pk) != 0) {
+    if (load_pk_from_vault(&pk, mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
         ESP_LOGE(TAG, "Failed to load keypair");
         goto cleanup;
     }
@@ -179,7 +183,7 @@ esp_err_t cert_get_csr(char *csr_out, size_t csr_buf_size)
     mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
                           (const unsigned char *)"minihsm_csr", 11);
     esp_err_t result = ESP_FAIL;
-    if (load_pk_from_vault(&pk) != 0) goto cleanup;
+    if (load_pk_from_vault(&pk, mbedtls_ctr_drbg_random, &ctr_drbg) != 0) goto cleanup;
     char device_id[17];
     vault_get_device_id(device_id);
     char subject[CERT_SUBJECT_MAX];

@@ -1736,3 +1736,10 @@ PENDIENTE (lado SERVER xami.run, NO es firmware):
 - R3 PAdES: usar "algorithm"/cert del resultado para armar RSA (PKCS1v15) o ECDSA.
 - Verificador de la VC (decodificar COSE_Sign1, validar did:key + challenge) y sellado B7 (stamping.io).
 - Aplicar el mismo proof COSE a /health y /audit (att_* es reutilizable) — pendiente.
+
+## FIXES FIRMWARE PENDIENTES DE BUILD (acumular y compilar juntos) — 2026-06-13
+- [APLICADO en codigo, SIN pushear] cert/CSR con SPKI vacio (pubkey=00, punto al infinito):
+  load_pk_from_vault() no derivaba Q porque mbedtls_ecp_read_key NO la calcula en mbedTLS 3.x.
+  Fix: mbedtls_ecp_keypair_calc_public(pk, rng) tras read_key (+RNG a los 2 llamadores).
+  Verificado el sintoma con asn1crypto sobre /cert y /csr del build 43.
+- [PENDIENTE] network_engine: el ESP_LOGI de endpoints no lista /device/challenge (cosmetico).
