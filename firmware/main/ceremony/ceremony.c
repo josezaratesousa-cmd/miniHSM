@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "esp_log.h"
+#include "esp_err.h"
 #include "cJSON.h"
 #include "match_engine.h"      /* match_ecies_decrypt */
 #include "custody_manager.h"   /* custody_add, CUSTODY_* */
@@ -66,6 +67,7 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
                              seed, &seed_len, &slot);
             crypto_zeroize(priv_der, priv_len); free(priv_der);
             if (rc != ESP_OK){
+                ESP_LOGE(TAG, "custody_add rc=0x%x (%s) priv_len=%u", rc, esp_err_to_name(rc), (unsigned)priv_len);
                 snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"custody_add failed\"}");
             } else {
                 char label[80], uri[256];

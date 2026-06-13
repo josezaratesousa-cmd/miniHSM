@@ -70,9 +70,9 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_de
                       const uint8_t *passphrase, size_t pass_len,
                       uint8_t *totp_seed_out, size_t *totp_seed_len_out, int *slot_out){
     if (!alias || !priv_der || !cert_pem || !passphrase || !slot_out) return ESP_ERR_INVALID_ARG;
-    if (priv_der_len == 0 || priv_der_len > CUSTODY_PRIV_DER_MAX) return ESP_ERR_INVALID_ARG;
+    if (priv_der_len == 0 || priv_der_len > CUSTODY_PRIV_DER_MAX){ ESP_LOGE(TAG, "FAIL priv_der_len=%u fuera de rango (max %d)", (unsigned)priv_der_len, CUSTODY_PRIV_DER_MAX); return ESP_ERR_INVALID_ARG; }
     size_t cert_len = strlen(cert_pem);
-    if (cert_len == 0 || cert_len >= CUSTODY_CERT_MAX) return ESP_ERR_INVALID_ARG;
+    if (cert_len == 0 || cert_len >= CUSTODY_CERT_MAX){ ESP_LOGE(TAG, "FAIL cert_len=%u fuera de rango (max %d)", (unsigned)cert_len, CUSTODY_CERT_MAX); return ESP_ERR_INVALID_ARG; }
 
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
@@ -87,8 +87,9 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_de
     m.in_use = 1;
     m.priv_len = (uint16_t)priv_der_len;
     {   int kind = CRYPTO_KEY_UNKNOWN, bits = 0;
-        if (crypto_pk_type(priv_der, priv_der_len, &kind, &bits) != ESP_OK){ nvs_close(h); return ESP_ERR_INVALID_ARG; }
+        if (crypto_pk_type(priv_der, priv_der_len, &kind, &bits) != ESP_OK){ ESP_LOGE(TAG, "FAIL crypto_pk_type no parsea PKCS8 (priv_len=%u)", (unsigned)priv_der_len); nvs_close(h); return ESP_ERR_INVALID_ARG; }
         m.sig_kind = (uint8_t)kind; m.sig_bits = (uint16_t)bits;
+        ESP_LOGI(TAG, "add: kind=%d bits=%d priv_len=%u cert_len=%u slot=%d", kind, bits, (unsigned)priv_der_len, (unsigned)cert_len, slot);
     }
 
     uint8_t chip[CHIP_SECRET_SIZE], kek[32];
@@ -123,6 +124,7 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_de
     key_for(k, slot, "cert"); if (err==ESP_OK) err = nvs_set_str(h, k, cert_pem);
     key_for(k, slot, "meta"); if (err==ESP_OK) err = nvs_set_blob(h, k, &m, sizeof(m));
     if (err == ESP_OK) err = nvs_commit(h);
+    if (err != ESP_OK) ESP_LOGE(TAG, "FAIL custody nvs err=0x%x (%s) slot=%d", err, esp_err_to_name(err), slot);
     crypto_zeroize(wrap, pwrap_len); free(wrap);
     crypto_zeroize(twrap, sizeof(twrap));
     nvs_close(h);
