@@ -280,3 +280,24 @@ esp_err_t custody_get_mode(int slot, int *mode_out){
     if (mode_out) *mode_out = m.mode;
     return ESP_OK;
 }
+
+/* Resuelve el slot de la credencial cuyo fingerprint (32 bytes) coincide.
+   Lo usa el agente: el job trae el fingerprint, no el slot. */
+esp_err_t custody_find_by_fingerprint(const uint8_t *fp32, int *slot_out)
+{
+    if (!fp32) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return ESP_FAIL;
+    esp_err_t found = ESP_ERR_NOT_FOUND;
+    for (int s = 0; s < CUSTODY_MAX_CREDS; s++) {
+        custody_meta_t m;
+        if (read_meta(h, s, &m) == ESP_OK && m.in_use &&
+            memcmp(m.fingerprint, fp32, 32) == 0) {
+            if (slot_out) *slot_out = s;
+            found = ESP_OK;
+            break;
+        }
+    }
+    nvs_close(h);
+    return found;
+}

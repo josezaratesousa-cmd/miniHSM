@@ -42,4 +42,6 @@ esp_err_t custody_get_cert(int slot, char *pem_out, size_t pem_cap);
 esp_err_t custody_get_alias(int slot, char *alias_out, size_t cap);
 /* Fingerprint (SHA-256 de la pubkey) en hex de la credencial del slot, para listar en la VC. */
 esp_err_t custody_get_fingerprint(int slot, char *hex_out, size_t cap);
+/* Resuelve el slot por fingerprint (32 bytes). Para el agente (el job trae el fingerprint). */
+esp_err_t custody_find_by_fingerprint(const uint8_t *fp32, int *slot_out);
 esp_err_t custody_delete(int slot);
