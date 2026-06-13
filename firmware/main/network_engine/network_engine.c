@@ -661,8 +661,8 @@ esp_err_t network_http_server_start(void)
         httpd_register_uri_handler(s_server, &uris[i]);
 
     ESP_LOGI(TAG, "HTTP server started");
-    ESP_LOGI(TAG, "POST: /sign /verify /cert");
-    ESP_LOGI(TAG, "GET : /cert /csr /device /health /audit");
+    ESP_LOGI(TAG, "POST: /sign /verify /cert /ceremony /provision/{wifi,reconfigure}");
+    ESP_LOGI(TAG, "GET : /cert /csr /device /device/challenge /health /audit /custodia");
     return ESP_OK;
 }
 
