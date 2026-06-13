@@ -251,6 +251,7 @@ $("#go").onclick=async()=>{
       if($("#fop").value>0){fd.append("fill_opacity",($("#fop").value/100).toFixed(2));fd.append("fill_color",$("#fcol").value);}
       if($("#simg").files[0])fd.append("stamp_image",$("#simg").files[0]);
     }
+    if(window.xamiAuthFields){try{const cf=await window.xamiAuthFields();if(cf){fd.append("credential_id",cf.credential_id);fd.append("credential_cert",cf.credential_cert);fd.append("auth",cf.auth);}}catch(e){console.warn("auth credencial:",e);}}
     const r=await fetch(API+"/v1/signatures/pdf",{method:"POST",body:fd});
     if(!r.ok){const t=await r.text();throw new Error(r.status==503?"No hay miniHSM en línea.":("Error "+r.status+": "+t));}
     const j=await r.json();
@@ -272,5 +273,6 @@ async function poll(id){
   throw new Error("Tiempo de espera agotado");
 }
 </script>
+<script src="firmar-custodia.js"></script>
 </body>
 </html>
