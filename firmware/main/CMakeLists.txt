@@ -16,6 +16,7 @@ idf_component_register(
         "ceremony/ceremony.c"
         "attestation/attestation.c"
         "wallet_crypto/wallet_crypto.c"
+        "agent_crypto/agent_crypto.c"
     INCLUDE_DIRS
         "."
         "crypto_engine"
@@ -33,6 +34,7 @@ idf_component_register(
         "ceremony"
         "attestation"
         "wallet_crypto"
+        "agent_crypto"
     REQUIRES
         nvs_flash
         esp_wifi
