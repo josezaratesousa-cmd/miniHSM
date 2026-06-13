@@ -1790,3 +1790,18 @@ Cierra el diseno de B6. Decisiones discutidas y aprobadas:
 - DISENO (pendiente de implementar). Reusa el encoder COSE/CBOR/did:key del modulo
   attestation/ (B3, ya en firmware). Implica: particion 1MB (partitions.csv), capa
   de persistencia (FS/log crudo), firmado COSE del logHash, integracion con B7.
+
+### Formato de firma — UNIFICADO (decision 2026-06-13): un solo mecanismo en TODO
+- Reemplaza/aclara lo anterior: TODO el firmado usa el MISMO formato estandar
+  COSE_Sign1/ES256 + did:key (modulo attestation/, validado vs pycose). Tres usos:
+    1. VC del /device (B3) — identidad del device.
+    2. sig POR ENTRADA del audit — autenticidad de cada linea (antes era firma raw).
+    3. firma de ENTREGA del log (sobre logHash) — completitud (anti eliminar/agregar).
+  Cada uno su alcance, pero UN solo encoder/verificador. Se elimina el "doble tipo de firma".
+- Matices para no inflar/duplicar:
+  * sig por entrada = COSE_Sign1 con PAYLOAD DETACHED (firma los bytes canonicos de la
+    entrada, sin re-embeberla) -> no duplica los campos ya guardados.
+  * did:key NO se repite por entrada: se ancla por EPOCA/segmento; cada entrada lo
+    referencia con kid en el unprotected header (encaja con el anclaje de epoca).
+  * Costo: MISMA operacion ECDSA P-256 que hoy (vault_sign); solo suma el wrap CBOR
+    (~10-15 B/entrada). No añade costo de firma.
