@@ -1805,3 +1805,19 @@ Cierra el diseno de B6. Decisiones discutidas y aprobadas:
     referencia con kid en el unprotected header (encaja con el anclaje de epoca).
   * Costo: MISMA operacion ECDSA P-256 que hoy (vault_sign); solo suma el wrap CBOR
     (~10-15 B/entrada). No añade costo de firma.
+
+### Entrega del log — campo `proof` IGUAL que el VC (decision 2026-06-13)
+- Al entregar el reporte por API, el log lleva un campo `proof` con el MISMO formato
+  que la VC del /device (reemplaza el sub-objeto `attestation` anterior):
+    "proof": { "type":"CoseSign1ES256", "did":"did:key:z...", "cose":"<hex>" }
+  El reporte queda como el VC: data + proof. Un solo verificador para /device y /audit.
+- COSE con PAYLOAD DETACHED: el `cose` firma los bytes canonicos de `data.log` (que va
+  aparte en el JSON), NO lo re-embebe (el log puede ser ~1MB). El VC lo lleva embebido
+  por ser chico; el log, detached por tamano. Mismo type/did/algoritmo (sigue estandar).
+- Lo que el proof CUBRE (va DENTRO de data.log canonico, que es lo firmado): from, to,
+  count, issuedAt(UTC) y las entradas -> certifica rango + momento + completitud.
+- Estructura final de /audit:
+  { "data": { "log": { "from","to","count","issuedAt",
+                       "entries":[ {<campos>, "sig": <COSE_Sign1 entrada, detached> } ] } },
+    "proof":    { "type":"CoseSign1ES256", "did":"did:key:z...", "cose":"<hex detached sobre data.log>" },
+    "stamping": { "trxid","recipient","blockhash","nonce","timestamp" } }    # B7, opcional/al vuelo
