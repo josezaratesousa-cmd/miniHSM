@@ -19,6 +19,7 @@
 #include "crypto_engine.h"
 #include "cert_manager.h"
 #include "custody_manager.h"
+#include "agent_store.h"     /* agente: R pendiente + nonce anti-replay */
 #include "match_engine.h"
 #include "ceremony.h"
 #include "version.h"
@@ -125,8 +126,67 @@ static void process_signing_job(cJSON *job)
     /* Fase 2: credencial custodiada (slot) vs clave de iniciacion del device */
     cJSON      *cidit   = cJSON_GetObjectItem(job, "credentialId");
     const char *authhex = cJSON_GetStringValue(cJSON_GetObjectItem(job, "auth"));
+    const char *fphex   = cJSON_GetStringValue(cJSON_GetObjectItem(job, "fingerprint"));
 
-    if (cidit && cJSON_IsNumber(cidit)) {
+    if (fphex && authhex) {
+        /* AGENTE AUTOMATIZADO: job trae fingerprint + auth=ECIES({R,nonce}).
+           Sin passphrase ni TOTP: R (custodiada por el server) deriva la KEK. */
+        uint8_t fp32[32];
+        if (strlen(fphex) != 64 || crypto_hex_to_bytes(fphex, fp32, 32) != ESP_OK) {
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: fingerprint invalido", "");
+            return;
+        }
+        int aslot = -1;
+        if (custody_find_by_fingerprint(fp32, &aslot) != ESP_OK || aslot < 0) {
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: credencial no hallada", "");
+            return;
+        }
+        size_t ablen = strlen(authhex) / 2;
+        uint8_t *authblob = malloc(ablen ? ablen : 1);
+        uint8_t plain[256]; size_t plain_len = 0;
+        esp_err_t aerr = (authblob && crypto_hex_to_bytes(authhex, authblob, ablen) == ESP_OK)
+                         ? match_ecies_decrypt(authblob, ablen, plain, sizeof(plain) - 1, &plain_len)
+                         : ESP_FAIL;
+        if (authblob) free(authblob);
+        if (aerr != ESP_OK) {
+            crypto_zeroize(plain, sizeof(plain));
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: auth decrypt failed", "");
+            return;
+        }
+        plain[plain_len] = 0;
+        cJSON *aj = cJSON_Parse((char*)plain);
+        const char *Rhex = aj ? cJSON_GetStringValue(cJSON_GetObjectItem(aj, "R")) : NULL;
+        cJSON *nit = aj ? cJSON_GetObjectItem(aj, "nonce") : NULL;
+        uint8_t Rb[32];
+        if (!Rhex || strlen(Rhex) != 64 || crypto_hex_to_bytes(Rhex, Rb, 32) != ESP_OK
+            || !nit || !cJSON_IsNumber(nit)) {
+            crypto_zeroize(plain, sizeof(plain)); if (aj) cJSON_Delete(aj);
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: R/nonce invalido", "");
+            return;
+        }
+        uint64_t jnonce = (uint64_t)cJSON_GetNumberValue(nit);
+        if (!agent_nonce_ok(aslot, jnonce)) {
+            crypto_zeroize(Rb, sizeof(Rb)); crypto_zeroize(plain, sizeof(plain)); cJSON_Delete(aj);
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: nonce replay", "");
+            return;
+        }
+        esp_err_t serr = custody_sign(aslot, Rb, 32, NULL, 0, digest, sig_der, &sig_len);
+        crypto_zeroize(Rb, sizeof(Rb));
+        crypto_zeroize(plain, sizeof(plain));
+        if (aj) cJSON_Delete(aj);
+        if (serr != ESP_OK) {
+            ESP_LOGE(TAG, "job %s: agente custody_sign slot %d fallo (%d)", rid, aslot, (int)serr);
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: sign failed", "");
+            return;
+        }
+        agent_nonce_commit(aslot, jnonce);   /* anti-replay: avanza el contador */
+        if (custody_get_cert(aslot, cert_pem, sizeof(cert_pem)) != ESP_OK) {
+            post_job_result(rid, device_id, "", "", "ERROR", "agente: cert not found", "");
+            return;
+        }
+        { int kk = CRYPTO_KEY_EC, bb = 256; custody_get_type(aslot, &kk, &bb);
+          snprintf(algo, sizeof(algo), kk == CRYPTO_KEY_RSA ? "RSA-PKCS1v15-SHA256" : "ECDSA-P256-SHA256-DER"); }
+    } else if (cidit && cJSON_IsNumber(cidit)) {
         int slot = (int)cJSON_GetNumberValue(cidit);
         if (!authhex) {
             post_job_result(rid, device_id, "", "", "ERROR", "custody: missing auth", "");
@@ -231,6 +291,24 @@ static esp_err_t do_heartbeat(void)
     cJSON_AddNumberToObject(body, "timestamp", (double)ts);
     cJSON_AddStringToObject(body, "nonce",     nonce);
     cJSON_AddStringToObject(body, "firmware",  XAMI_VERSION);
+    /* Agente: adjuntar R pendientes de entrega (fingerprint+R por slot). */
+    {
+        cJSON *aks = NULL;
+        for (int sl = 0; sl < CUSTODY_MAX_CREDS; sl++) {
+            if (!agent_pending_has(sl)) continue;
+            uint8_t fp[32], r[32];
+            if (agent_pending_get(sl, fp, r) != ESP_OK) continue;
+            char fph[65], rh[65];
+            crypto_bytes_to_hex(fp, 32, fph);
+            crypto_bytes_to_hex(r, 32, rh);
+            if (!aks) aks = cJSON_AddArrayToObject(body, "agentKeys");
+            cJSON *e = cJSON_CreateObject();
+            cJSON_AddStringToObject(e, "fingerprint", fph);
+            cJSON_AddStringToObject(e, "R", rh);
+            cJSON_AddItemToArray(aks, e);
+            crypto_zeroize(r, sizeof(r)); crypto_zeroize(rh, sizeof(rh));
+        }
+    }
     char *body_str = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
 
@@ -294,6 +372,22 @@ static esp_err_t do_heartbeat(void)
                 const char *csec = cJSON_GetStringValue(cJSON_GetObjectItem(cer, "secret"));
                 const char *cali = cJSON_GetStringValue(cJSON_GetObjectItem(cer, "alias"));
                 if (csec) ceremony_arm(csec, cali ? cali : "");
+            }
+            /* Agente: ACK de R custodiadas -> olvidar las pendientes confirmadas. */
+            cJSON *ack = cJSON_GetObjectItem(resp, "acceptedKeys");
+            if (cJSON_IsArray(ack)) {
+                cJSON *it = NULL;
+                cJSON_ArrayForEach(it, ack) {
+                    const char *fph = cJSON_GetStringValue(it);
+                    if (!fph || strlen(fph) != 64) continue;
+                    uint8_t fp[32];
+                    if (crypto_hex_to_bytes(fph, fp, 32) != ESP_OK) continue;
+                    int sl = -1;
+                    if (custody_find_by_fingerprint(fp, &sl) == ESP_OK && sl >= 0) {
+                        agent_pending_clear(sl);
+                        ESP_LOGI(TAG, "agente: R entregada y olvidada (slot %d)", sl);
+                    }
+                }
             }
             cJSON_Delete(resp);
         } else if (rlen > 0) {
