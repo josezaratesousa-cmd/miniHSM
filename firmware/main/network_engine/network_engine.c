@@ -632,13 +632,24 @@ static esp_err_t handler_provision_reconfigure(httpd_req_t *req);
 /* Fase 4b: cargador minimo de la UI de custodia. Sirve una pagina http (mismo origen que
    el chip) que arranca app.js desde xami.run. Asi la pagina puede hablar con el chip (http)
    y con la API (https) sin chocar con mixed-content. */
-static esp_err_t handler_custodia(httpd_req_t *req)
+extern const uint8_t logo_png_start[] asm("_binary_logo_png_start");
+extern const uint8_t logo_png_end[]   asm("_binary_logo_png_end");
+
+/* Logo Xami embebido: se sirve local para que funcione tambien en AP (sin internet). */
+static esp_err_t handler_logo(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "image/png");
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400");
+    return httpd_resp_send(req, (const char *)logo_png_start, logo_png_end - logo_png_start);
+}
+
+static esp_err_t handler_enroll(httpd_req_t *req)
 {
     static const char *page =
         "<!doctype html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<title>Custodia Xami</title></head><body>"
-        "<script src=\"https://xami.run/custodia/app.js\"></script>"
+        "<title>Xami</title></head><body>"
+        "<script src=\"https://xami.run/enroll/app.js\"></script>"
         "</body></html>";
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr(req, page);
@@ -696,7 +707,8 @@ esp_err_t network_http_server_start(void)
         { .uri = "/provision/wifi", .method = HTTP_POST,   .handler = handler_provision_wifi       },
         { .uri = "/provision/wifi", .method = HTTP_DELETE, .handler = handler_provision_wifi_clear },
         { .uri = "/provision/reconfigure", .method = HTTP_POST, .handler = handler_provision_reconfigure },
-        { .uri = "/custodia", .method = HTTP_GET,  .handler = handler_custodia },
+        { .uri = "/logo.png", .method = HTTP_GET,  .handler = handler_logo     },
+        { .uri = "/enroll",   .method = HTTP_GET,  .handler = handler_enroll    },
         { .uri = "/ceremony", .method = HTTP_POST, .handler = handler_ceremony },
     };
 
@@ -705,7 +717,7 @@ esp_err_t network_http_server_start(void)
 
     ESP_LOGI(TAG, "HTTP server started");
     ESP_LOGI(TAG, "POST: /sign /verify /cert /ceremony /provision/{wifi,reconfigure}");
-    ESP_LOGI(TAG, "GET : /cert /csr /device /device/challenge /health /audit /custodia");
+    ESP_LOGI(TAG, "GET : /cert /csr /device /device/challenge /health /audit /enroll /logo.png");
     return ESP_OK;
 }
 

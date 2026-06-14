@@ -49,4 +49,6 @@ idf_component_register(
         esp_hw_support
         esp-tls
         espressif__cjson
+    EMBED_FILES
+        "web_assets/logo.png"
 )

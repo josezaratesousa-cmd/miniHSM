@@ -36,6 +36,7 @@ static const char *PORTAL_HTML =
 ".hdr{background:linear-gradient(135deg,#0a2540,#1a4a7a);color:#fff;padding:36px 28px;text-align:center}\n"
 ".logo{font-size:34px;font-weight:700;letter-spacing:2px;margin-bottom:6px}\n"
 ".logo span{color:#4db8ff}\n"
+".logo-img{height:44px;width:auto;margin:0 auto 8px;display:block}\n"
 ".tag{font-size:14px;opacity:.85}\n"
 ".dom{font-size:12px;opacity:.7;margin-top:8px;font-family:monospace;letter-spacing:.5px}\n"
 ".body{padding:28px}\n"
@@ -54,7 +55,7 @@ static const char *PORTAL_HTML =
 ".sig{color:#4db8ff;font-weight:600}\n"
 "</style></head><body>\n"
 "<div class=\"card\">\n"
-"<div class=\"hdr\"><div class=\"logo\">X<span>a</span>mi</div><div class=\"tag\">Modulo de Firma Segura</div>"
+"<div class=\"hdr\"><img src=\"/logo.png\" class=\"logo-img\" alt=\"Xami\"><div class=\"tag\">Modulo de Firma Segura</div>"
 "<div class=\"dom\">api.xami.run</div></div>\n"
 "<div class=\"body\">\n"
 "<p class=\"welcome\">Bienvenido. Conecta tu Xami a una red WiFi para comenzar a firmar documentos de forma segura.</p>\n"
@@ -252,6 +253,13 @@ static esp_err_t start_softap(void)
     return ESP_OK;
 }
 
+extern const uint8_t logo_png_start[] asm("_binary_logo_png_start");
+extern const uint8_t logo_png_end[]   asm("_binary_logo_png_end");
+static esp_err_t h_logo(httpd_req_t *req){
+    httpd_resp_set_type(req, "image/png");
+    return httpd_resp_send(req, (const char *)logo_png_start, logo_png_end - logo_png_start);
+}
+
 static httpd_handle_t start_portal_httpd(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -265,8 +273,10 @@ static httpd_handle_t start_portal_httpd(void)
     httpd_uri_t u_scan = { .uri="/scan", .method=HTTP_GET, .handler=h_scan };
     httpd_uri_t u_conn = { .uri="/connect", .method=HTTP_POST, .handler=h_connect };
     httpd_uri_t u_root = { .uri="/*", .method=HTTP_GET, .handler=h_root };
+    httpd_uri_t u_logo = { .uri="/logo.png", .method=HTTP_GET, .handler=h_logo };
     httpd_register_uri_handler(srv, &u_scan);
     httpd_register_uri_handler(srv, &u_conn);
+    httpd_register_uri_handler(srv, &u_logo);
     httpd_register_uri_handler(srv, &u_root);
     return srv;
 }
