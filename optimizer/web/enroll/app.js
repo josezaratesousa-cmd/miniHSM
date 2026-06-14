@@ -334,7 +334,7 @@
     } else if (step === 2) {
       await doGuardar();
     } else {
-      setStatus("");
+      location.reload();  /* "Hecho": reinicia el wizard para enrolar otra credencial */
     }
   }
 
