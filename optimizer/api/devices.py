@@ -11,13 +11,15 @@ import logging
 import hmac
 import hashlib
 import secrets as _secrets
+import json
+import re
 
 from api import credentials
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from minihsm.registry import registry, DeviceEntry
-from minihsm import sold_devices, device_secrets, job_queue
+from minihsm import sold_devices, device_secrets, job_queue, agent_keys
 from minihsm.crypto_match import verify_proof_of_possession, ecies_encrypt
 
 log    = logging.getLogger("devices")
@@ -45,6 +47,7 @@ class HeartbeatRequest(BaseModel):
     timestamp: int
     nonce:     str
     firmware:  str = ""
+    agentKeys: list = []   # agente: [{"fingerprint":..,"R":..}] pendientes de custodia
 
 
 class HeartbeatResponse(BaseModel):
@@ -55,6 +58,7 @@ class HeartbeatResponse(BaseModel):
     nextPollSeconds: int          = NEXT_POLL_SECONDS
     job:             dict | None  = None
     ceremony:        dict | None  = None
+    acceptedKeys:    list         = []
 
 
 @router.post("/heartbeat", response_model=HeartbeatResponse)
@@ -75,6 +79,16 @@ def heartbeat(req: Request, body: HeartbeatRequest):
     # TODO: validar token HMAC del heartbeat con el secret del device
     registry.register(device_id=body.deviceId, ip=ip, firmware=body.firmware)
     log.info(f"Heartbeat from {body.deviceId} @ {ip} (firmware={body.firmware})")
+
+    # Agente: el chip entrega las R pendientes; las custodiamos y devolvemos ACK.
+    accepted = []
+    for k in (body.agentKeys or []):
+        fp = (k or {}).get("fingerprint"); rk = (k or {}).get("R")
+        if fp and rk:
+            agent_keys.accept(body.deviceId, fp, rk)
+            accepted.append(fp.lower())
+    if accepted:
+        log.info(f"Heartbeat custodia R de {body.deviceId}: {accepted}")
 
     # Bloque 10: hay trabajo pendiente para este device?
     job_payload = None
@@ -105,6 +119,20 @@ def heartbeat(req: Request, body: HeartbeatRequest):
                 job_payload["auth"] = pending["auth"]
             if pending.get("sigType"):
                 job_payload["sigType"] = pending["sigType"]
+            fp = pending.get("fingerprint")
+            if fp:
+                m = re.search(r"[0-9a-fA-F]{16}", body.deviceId)
+                raw_id = m.group(0).lower() if m else body.deviceId
+                pub = sold_devices.get_pubkey(raw_id) or sold_devices.get_pubkey(body.deviceId)
+                if pub and agent_keys.has_key(body.deviceId, fp):
+                    n = agent_keys.next_nonce(body.deviceId, fp)
+                    R = agent_keys.get(body.deviceId, fp)["R"]
+                    payload = json.dumps({"R": R, "nonce": n}).encode()
+                    job_payload["fingerprint"] = fp
+                    job_payload["auth"]        = ecies_encrypt(pub, payload)
+                    log.info(f"Heartbeat inyecta agente fp={fp} nonce={n} a {body.deviceId}")
+                else:
+                    log.warning(f"Job agente fp={fp}: sin R custodiada o sin pubkey; no se inyecta")
             log.info(f"Heartbeat entrega job {pending['requestId']} a {body.deviceId}")
 
     # Fase 4a: ceremonia de custodia pendiente? (el chip entra en modo AP con el secreto)
@@ -123,6 +151,7 @@ def heartbeat(req: Request, body: HeartbeatRequest):
         nextPollSeconds = NEXT_POLL_SECONDS,
         job             = job_payload,
         ceremony        = ceremony_payload,
+        acceptedKeys    = accepted,
     )
 
 
