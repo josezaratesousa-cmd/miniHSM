@@ -10,6 +10,8 @@
 #include "custody_manager.h"   /* custody_add, CUSTODY_* */
 #include "cc_helpers.h"        /* cc_totp_uri */
 #include "crypto_engine.h"     /* crypto_hex_to_bytes, crypto_zeroize, CRYPTO_PRIVKEY_SIZE */
+#include "esp_random.h"        /* esp_fill_random (modo agente) */
+#include "agent_store.h"       /* agent_pending_set (modo agente) */
 
 static const char *TAG = "ceremony";
 static char s_secret[40] = {0};
@@ -48,7 +50,7 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
     int wmode = (jmode && cJSON_IsNumber(jmode)) ? (int)cJSON_GetNumberValue(jmode) : 0;  /* 0=agente, 1=autorizacion */
 
     esp_err_t rc = ESP_OK;
-    if (!secret || !cert || !privh || !pass){
+    if (!secret || !cert || !privh || (wmode == 1 && !pass)){
         snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"missing fields\"}"); rc = ESP_ERR_INVALID_ARG;
     } else if (strcmp(secret, s_secret) != 0){
         snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"bad ceremony secret\"}"); rc = ESP_ERR_INVALID_STATE;
@@ -65,12 +67,26 @@ esp_err_t ceremony_process(const uint8_t *blob, size_t blob_len, char *resp, siz
             snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"bad priv hex\"}"); rc = ESP_ERR_INVALID_ARG;
         } else {
             uint8_t seed[CUSTODY_TOTP_SEED_LEN]; size_t seed_len = sizeof(seed); int slot = -1;
-            rc = custody_add(alias, priv_der, priv_len, cert, (const uint8_t*)pass, strlen(pass),
+            uint8_t Ragent[32] = {0};
+            const uint8_t *sec_b; size_t sec_len;
+            if (wmode == 1){ sec_b = (const uint8_t*)pass; sec_len = strlen(pass); }
+            else { esp_fill_random(Ragent, 32); sec_b = Ragent; sec_len = 32; }  /* agente: R aleatoria */
+            rc = custody_add(alias, priv_der, priv_len, cert, sec_b, sec_len,
                              seed, &seed_len, &slot, wmode);
             crypto_zeroize(priv_der, priv_len); free(priv_der);
             if (rc != ESP_OK){
                 ESP_LOGE(TAG, "custody_add rc=0x%x (%s) priv_len=%u", rc, esp_err_to_name(rc), (unsigned)priv_len);
                 snprintf(resp, resp_cap, "{\"ok\":false,\"error\":\"custody_add failed\"}");
+            } else if (wmode == 0){
+                uint8_t fp32[32];
+                crypto_sha256((const uint8_t*)cert, strlen(cert), fp32);
+                esp_err_t pr = agent_pending_set(slot, fp32, Ragent);
+                crypto_zeroize(Ragent, sizeof(Ragent));
+                if (pr != ESP_OK)
+                    snprintf(resp, resp_cap, "{\"ok\":true,\"slot\":%d,\"mode\":\"agente\",\"warn\":\"R no retenida\"}", slot);
+                else
+                    snprintf(resp, resp_cap, "{\"ok\":true,\"slot\":%d,\"mode\":\"agente\"}", slot);
+                s_armed = false; s_secret[0] = 0;     /* secreto consumido; R pendiente de entrega */
             } else {
                 char label[80], uri[256];
                 snprintf(label, sizeof(label), "Xami:%s", alias);
