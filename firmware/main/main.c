@@ -44,6 +44,16 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "[1/7] NVS OK");
 
+    /* 1b. NVS particion 'vault' (64KB dedicados a credenciales custodiadas) */
+    esp_err_t rv = nvs_flash_init_partition("vault");
+    if (rv == ESP_ERR_NVS_NO_FREE_PAGES || rv == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS 'vault' erase needed");
+        ESP_ERROR_CHECK(nvs_flash_erase_partition("vault"));
+        rv = nvs_flash_init_partition("vault");
+    }
+    ESP_ERROR_CHECK(rv);
+    ESP_LOGI(TAG, "[1b] NVS 'vault' OK (64KB para credenciales)");
+
     /* 2. Crypto Engine */
     ESP_ERROR_CHECK(crypto_engine_init());
     ESP_LOGI(TAG, "[2/7] Crypto Engine OK (PSA / P-256 / DER)");

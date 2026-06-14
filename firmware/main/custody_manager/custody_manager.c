@@ -10,6 +10,7 @@
 
 static const char *TAG    = "custody";
 static const char *NVS_NS = "custody";
+static const char *VAULT_PART = "vault";  /* particion dedicada 64KB */
 
 #define SALT_SIZE   16
 #define NONCE_SIZE  12
@@ -42,7 +43,7 @@ static esp_err_t read_meta(nvs_handle_t h, int slot, custody_meta_t *m){
 
 esp_err_t custody_init(void){
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);   /* crea el namespace si no existe */
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READWRITE, &h);   /* crea el namespace si no existe */
     if (err == ESP_OK) nvs_close(h);
     ESP_LOGI(TAG, "custody_manager init (max %d credenciales)", CUSTODY_MAX_CREDS);
     return err;
@@ -50,7 +51,7 @@ esp_err_t custody_init(void){
 
 int custody_count(void){
     nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return 0;
+    if (nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h) != ESP_OK) return 0;
     int n = 0; custody_meta_t m;
     for (int i = 0; i < CUSTODY_MAX_CREDS; i++)
         if (read_meta(h, i, &m) == ESP_OK && m.in_use) n++;
@@ -76,7 +77,7 @@ esp_err_t custody_add(const char *alias, const uint8_t *priv_der, size_t priv_de
     if (cert_len == 0 || cert_len >= CUSTODY_CERT_MAX){ ESP_LOGE(TAG, "FAIL cert_len=%u fuera de rango (max %d)", (unsigned)cert_len, CUSTODY_CERT_MAX); return ESP_ERR_INVALID_ARG; }
 
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
     int slot = find_free_slot(h);
     if (slot < 0){ nvs_close(h); return ESP_ERR_NO_MEM; }
@@ -148,7 +149,7 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
     if (slot < 0 || slot >= CUSTODY_MAX_CREDS || !passphrase || !digest ||
         !sig_der_out || !sig_der_len) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);   /* RW: actualiza anti-replay */
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READWRITE, &h);   /* RW: actualiza anti-replay */
     if (err != ESP_OK) return err;
 
     custody_meta_t m;
@@ -207,7 +208,7 @@ esp_err_t custody_sign(int slot, const uint8_t *passphrase, size_t pass_len,
 esp_err_t custody_get_type(int slot, int *kind_out, int *bits_out){
     if (slot < 0 || slot >= CUSTODY_MAX_CREDS) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h);
     if (err != ESP_OK) return err;
     custody_meta_t m;
     err = read_meta(h, slot, &m);
@@ -221,7 +222,7 @@ esp_err_t custody_get_type(int slot, int *kind_out, int *bits_out){
 esp_err_t custody_get_cert(int slot, char *pem_out, size_t pem_cap){
     if (slot < 0 || slot >= CUSTODY_MAX_CREDS || !pem_out) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h);
     if (err != ESP_OK) return err;
     char k[16]; key_for(k, slot, "cert");
     size_t len = pem_cap;
@@ -233,7 +234,7 @@ esp_err_t custody_get_cert(int slot, char *pem_out, size_t pem_cap){
 esp_err_t custody_get_alias(int slot, char *alias_out, size_t cap){
     if (slot < 0 || slot >= CUSTODY_MAX_CREDS || !alias_out || cap == 0) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h);
     if (err != ESP_OK) return err;
     custody_meta_t m;
     err = read_meta(h, slot, &m);
@@ -247,7 +248,7 @@ esp_err_t custody_get_alias(int slot, char *alias_out, size_t cap){
 esp_err_t custody_get_fingerprint(int slot, char *hex_out, size_t cap){
     if (slot < 0 || slot >= CUSTODY_MAX_CREDS || cap < 65) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h);
     if (err != ESP_OK) return err;
     custody_meta_t m;
     err = read_meta(h, slot, &m);
@@ -260,7 +261,7 @@ esp_err_t custody_get_fingerprint(int slot, char *hex_out, size_t cap){
 esp_err_t custody_delete(int slot){
     if (slot < 0 || slot >= CUSTODY_MAX_CREDS) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    esp_err_t err = nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
     char k[16];
     key_for(k, slot, "priv"); nvs_erase_key(h, k);
@@ -274,7 +275,7 @@ esp_err_t custody_delete(int slot){
 
 esp_err_t custody_get_mode(int slot, int *mode_out){
     nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return ESP_FAIL;
+    if (nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h) != ESP_OK) return ESP_FAIL;
     custody_meta_t m; esp_err_t e = read_meta(h, slot, &m); nvs_close(h);
     if (e != ESP_OK || !m.in_use) return ESP_FAIL;
     if (mode_out) *mode_out = m.mode;
@@ -287,7 +288,7 @@ esp_err_t custody_find_by_fingerprint(const uint8_t *fp32, int *slot_out)
 {
     if (!fp32) return ESP_ERR_INVALID_ARG;
     nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return ESP_FAIL;
+    if (nvs_open_from_partition(VAULT_PART, NVS_NS, NVS_READONLY, &h) != ESP_OK) return ESP_FAIL;
     esp_err_t found = ESP_ERR_NOT_FOUND;
     for (int s = 0; s < CUSTODY_MAX_CREDS; s++) {
         custody_meta_t m;
