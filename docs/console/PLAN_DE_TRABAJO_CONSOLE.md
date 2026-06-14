@@ -31,9 +31,43 @@
 - Codigo versionado en console_src/ del repo (sin .env). No se toca firmware ni
   optimizador; el panel los consumira como guardian.
 
-SIGUIENTE: flujo de firma real (Enviar a firmar -> encolar en optimizador ->
-Firmar/Rechazar/Descargar), conectando el panel (guardian) con los endpoints
-existentes del optimizador.
+## ACTUALIZACION 2026-06-12 (sesion editor + nueva firma)
+COMPLETADO en esta sesion:
+- EDITOR DE DISENOS DE FIRMA (1.E.3): editor simple (logo + lineas de texto
+  agregar/eliminar + fecha auto), preview pixel-perfect alineado al motor real
+  del API (pades_polling), ajustes sobre el sello (ancho/alto/tam imagen/
+  opacidades/borde/disposicion), fill_opacity + fill_color (el API los implemento).
+- ALMACENAMIENTO PRIVADO POR TENANT: /home/xami/tenants/{id}/ FUERA del docroot,
+  NADA accesible por URL. Servicio guardian app/file.php valida sesion+pertenencia
+  (signature, pdf_preview). Imagenes y PDFs del sello/documentos ahi.
+- FLUJO NUEVA FIRMA completo (1.E.4): drawer con dispositivo, subida+medicion de
+  PDF (pdfinfo) a zona privada, acordeon de disenos (predeterminado primero,
+  cerrado=default/abierto=lista), pagina relativa (ultima/-1/primera/N), posicion
+  en 3 niveles: iconos de alineacion / formulas seguras (ancho,alto,+-*//()) que
+  se resuelven al valor real del PDF / SIMULADOR DRAG-AND-DROP sobre el PDF real
+  (pdf.js, sello arrastrable, coords en vivo, guarda como formula relativa).
+  Backend sign_send (guardian->optimizador 127.0.0.1:8182, registra sign_requests
+  +sign_events) y sign_status (polling, descarga firmado a zona privada /signed).
+  Probado E2E: envia, encola, polling "procesando" (espera heartbeat del device).
+- Sincronizado con cambios del API del otro asistente (fill_opacity/fill_color).
+
+PENDIENTE INMEDIATO:
+- Probar firma REAL E2E con un miniHSM online (hoy queda "procesando" sin device).
+- Firmar/Rechazar/Descargar desde las bandejas (descarga del PDF firmado via
+  guardian; hoy placeholders).
+- Mi consumo (saldo) — pantalla pendiente.
+- 1.D docs de desarrollo consolidados; 1.F pruebas formales.
+
+FASE FUTURA GRANDE (documentada en analisis/IMPACTO_CUSTODIA.md):
+- Gestion de CREDENCIALES CUSTODIADAS: el chip+server ya soportan multi-credencial
+  (RSA/EC custodiadas, fingerprint, modos agente/autorizacion-TOTP, ceremonia de
+  alta). console necesitara: tabla credentials, UI de ceremonia (wizard), selector
+  "Firmar con" enriquecido (device vs certificado custodiado), TOTP al firmar.
+  Es cambio de PRODUCTO, fase propia con su diseno y mockups. NO rompe lo actual
+  (device_id sigue siendo el camino base).
+
+SIGUIENTE: Firmar/Rechazar/Descargar desde bandejas + prueba real con device
+online, luego Mi consumo; despues abordar la fase de custodia.
 
 ---
 
@@ -124,8 +158,15 @@ para poder probar el panel cuanto antes.
 ### 1.E Construcción
 - [x] 1.E.1 Login del usuario (sobre el index.php ya existente en /console).
 - [x] 1.E.2 Vista "mis devices" (lista + estado de polling leído del optimizador).
-- [ ] 1.E.3 Preferencias de firma reutilizables (form que guarda sign_prefs).
-- [ ] 1.E.4 Enviar a firmar (subir PDF -> guardián -> encola en optimizador).
+- [x] 1.E.3 Preferencias de firma reutilizables — EDITOR DE DISEÑOS completo
+  (acordeon, preview pixel-perfect alineado al API, fill_opacity/fill_color,
+  subida de imagen a zona privada por tenant servida por guardian file.php).
+- [x] 1.E.4 Enviar a firmar — FLUJO NUEVA FIRMA completo: subida+medicion PDF
+  (pdfinfo) a zona privada, acordeon de disenos, pagina relativa (ultima/-1/
+  primera/N), posicion en 3 niveles (iconos simples / formulas ancho-alto /
+  drag-drop visual sobre el PDF con pdf.js), sign_send (guardian->optimizador,
+  registra sign_requests+eventos) + nfPoll (polling, descarga firmado a zona
+  privada). Probado E2E (encola, polling procesando).
 - [x] 1.E.5 Ver cola / estado de la firma (consulta el job).
 - [ ] 1.E.6 Apurar cola (botón activo solo en misma red) — puede quedar parcial.
 - [ ] 1.E.7 Log por Web Serial (UI amigable) — puede quedar para 1.F o fase aparte.
