@@ -40,4 +40,24 @@ if ($type === 'signature') {
   exit;
 }
 
+if ($type === 'pdf_preview') {
+  // sirve un PDF recien subido (zona privada del tenant) para previsualizar con pdf.js.
+  // valida que la ruta este confinada al tenant de la sesion.
+  $rel = ltrim($_GET['path'] ?? '', '/');
+  // solo permitimos rutas dentro de uploads/documents
+  if (strpos($rel, 'uploads/documents/') !== 0 || strpos($rel, '..') !== false) {
+    http_response_code(403); exit('forbidden');
+  }
+  $full = $BASE . '/' . $tid . '/' . $rel;
+  $realBase = realpath($BASE . '/' . $tid);
+  $realFull = realpath($full);
+  if ($realFull === false || strpos($realFull, $realBase) !== 0) { http_response_code(403); exit('forbidden'); }
+  if (!is_file($realFull)) { http_response_code(404); exit('gone'); }
+  header('Content-Type: application/pdf');
+  header('Cache-Control: private, max-age=120');
+  header('Content-Length: ' . filesize($realFull));
+  readfile($realFull);
+  exit;
+}
+
 http_response_code(400); exit('bad request');

@@ -2,6 +2,7 @@
 const API = '/app/api.php';
 const ICONS={
  check:'<path d="M5 12l5 5L20 7"/>',
+ drag:'<path d="M12 2v20M5 9l-3 3 3 3M19 9l3 3-3 3M9 5l3-3 3 3M9 19l3 3 3-3"/>',
  chevronDown:'<path d="M6 9l6 6 6-6"/>',
  doc:'<path d="M6 2h7l5 5v15H6z"/><path d="M13 2v5h5"/>',
  alignLeft:'<path d="M4 6h10M4 12h16M4 18h10"/>',
@@ -288,6 +289,7 @@ function nuevoHTML(){
 
     <div class="fld">
       <div class="nf-poshead"><label style="margin:0">¿Dónde va el sello?</label><span class="nf-advtoggle" id="nf-advtoggle" onclick="nfToggleAdv()">${svg("settings",13)} Avanzado</span></div>
+      <button type="button" class="nf-dragbtn" onclick="nfOpenDragSim()">${svg("drag",15)||svg("settings",15)} Posicionar sobre el documento</button>
       <div id="nf-possimple">
         <div class="nf-alignrow"><span>Horizontal</span>
           <button type="button" class="nf-al ${_nf.align_h==='left'?'on':''}" data-h="left">${svg("alignLeft",15)}</button>
@@ -469,6 +471,158 @@ async function nfPoll(rid, tries){
     if(r&&r.final){ refreshCounts(); renderView('pendientes'); return; }
   }catch(e){}
   setTimeout(()=>nfPoll(rid, tries+1), 2500);
+}
+
+
+// ===== Simulador drag-and-drop de posición sobre el PDF (pdf.js bajo demanda) =====
+const PDFJS_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let _pdfjsLoading=null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjsLoading) return _pdfjsLoading;
+  _pdfjsLoading=new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src=PDFJS_URL;
+    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; }catch(e){} res(window.pdfjsLib); };
+    s.onerror=()=>rej(new Error('no se pudo cargar pdf.js'));
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoading;
+}
+
+// resuelve la pagina seleccionada (last/last-1/first/n) a numero real 1-indexed
+function nfResolvePageNum(){
+  const ref=document.getElementById('nf-page').value;
+  const N=_nf.pdf.pages||1;
+  if(ref==='last') return N;
+  if(ref==='last-1') return Math.max(1,N-1);
+  if(ref==='first') return 1;
+  if(ref==='n') return Math.min(Math.max(1,+(document.getElementById('nf-pagenum').value||1)),N);
+  return 1;
+}
+
+async function nfOpenDragSim(){
+  if(!_nf.pdf){ alert('Primero sube un documento PDF.'); return; }
+  if(!_nf.design){ alert('Elige un diseño de firma.'); return; }
+  // overlay modal
+  let ov=document.getElementById('dragsim-ov');
+  if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='dragsim-ov'; ov.className='dragsim-ov';
+  ov.innerHTML=`
+    <div class="dragsim-box">
+      <div class="dragsim-head">
+        <span>${svg("drag",16)||''} Arrastra el sello a su lugar</span>
+        <button class="dragsim-x" onclick="nfCloseDragSim()">&times;</button>
+      </div>
+      <div class="dragsim-body">
+        <div class="dragsim-stage" id="dragsim-stage">
+          <canvas id="dragsim-canvas"></canvas>
+          <div id="dragsim-stamp" class="dragsim-stamp">${stampHTML(_nf.design.params||{}, _nf.design.image_path?fileURL(_nf.design.id):null)}</div>
+        </div>
+      </div>
+      <div class="dragsim-foot">
+        <div class="dragsim-coords" id="dragsim-coords">x=–, y=–</div>
+        <div class="dragsim-acts">
+          <button class="btn ghost" onclick="nfCloseDragSim()">Cancelar</button>
+          <button class="btn" onclick="nfApplyDragSim()">${svg("check",15)} Usar esta posición</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  try{
+    await loadPdfJs();
+    await nfRenderPdfPage();
+  }catch(e){ alert('No se pudo abrir el PDF: '+e.message); nfCloseDragSim(); }
+}
+
+async function nfRenderPdfPage(){
+  const url=API.replace('api.php','file.php')+'?type=pdf_preview&path='+encodeURIComponent(_nf.pdf.path);
+  const pdf=await window.pdfjsLib.getDocument(url).promise;
+  const pageNum=nfResolvePageNum();
+  const page=await pdf.getPage(pageNum);
+  // escalar para caber en el stage
+  const stage=document.getElementById('dragsim-stage');
+  const maxW=Math.min(stage.clientWidth||520, 520);
+  const vp1=page.getViewport({scale:1});
+  const scale=maxW/vp1.width;
+  const vp=page.getViewport({scale});
+  const canvas=document.getElementById('dragsim-canvas');
+  canvas.width=vp.width; canvas.height=vp.height;
+  await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+  // guardar factores para convertir px->pt del PDF
+  _nf._sim={ scale, pdfW:vp1.width, pdfH:vp1.height, cw:vp.width, ch:vp.height };
+  // dimensionar el sello segun su tamaño real escalado
+  const p=_nf.design.params||{};
+  const sw=(p.stamp_w||400)*scale, sh=(p.stamp_h||120)*scale;
+  const stamp=document.getElementById('dragsim-stamp');
+  stamp.style.width=sw+'px'; stamp.style.height=sh+'px';
+  // posicion inicial: segun fórmula/alineación actual o esquina inf-der
+  let pos=nfResolvePosition();
+  if(!pos){ const m=36; pos={x1:_nf._sim.pdfW-(p.stamp_w||400)-m, y1:m}; pos.x2=pos.x1+(p.stamp_w||400); pos.y2=pos.y1+(p.stamp_h||120); }
+  nfPlaceStamp(pos.x1, pos.y1);
+  nfBindDrag();
+}
+
+// coloca el sello en coords PDF (origen abajo-izq) -> px en canvas (origen arriba-izq)
+function nfPlaceStamp(xPt, yPt){
+  const s=_nf._sim, p=_nf.design.params||{};
+  const sw=p.stamp_w||400, sh=p.stamp_h||120;
+  const leftPx=xPt*s.scale;
+  const topPx=(s.pdfH-yPt-sh)*s.scale; // invertir Y
+  const stamp=document.getElementById('dragsim-stamp');
+  stamp.style.left=leftPx+'px'; stamp.style.top=topPx+'px';
+  _nf._sim.curX=Math.round(xPt); _nf._sim.curY=Math.round(yPt);
+  const c=document.getElementById('dragsim-coords');
+  if(c) c.textContent=`x=${Math.round(xPt)}, y=${Math.round(yPt)} pt  ·  página ${nfResolvePageNum()}`;
+}
+
+function nfBindDrag(){
+  const stamp=document.getElementById('dragsim-stamp');
+  const stage=document.getElementById('dragsim-stage');
+  let drag=false, ox=0, oy=0;
+  stamp.onmousedown=e=>{
+    drag=true; const r=stamp.getBoundingClientRect();
+    ox=e.clientX-r.left; oy=e.clientY-r.top; stamp.style.cursor='grabbing'; e.preventDefault();
+  };
+  window.addEventListener('mousemove', _nf._dragMove=e=>{
+    if(!drag) return;
+    const sr=stage.getBoundingClientRect(), s=_nf._sim, p=_nf.design.params||{};
+    let leftPx=e.clientX-sr.left-ox, topPx=e.clientY-sr.top-oy;
+    const sw=(p.stamp_w||400)*s.scale, sh=(p.stamp_h||120)*s.scale;
+    leftPx=Math.max(0,Math.min(leftPx, s.cw-sw));
+    topPx=Math.max(0,Math.min(topPx, s.ch-sh));
+    // px -> pt PDF (invertir Y)
+    const xPt=leftPx/s.scale;
+    const yPt=s.pdfH - (topPx/s.scale) - (p.stamp_h||120);
+    nfPlaceStamp(xPt, yPt);
+  });
+  window.addEventListener('mouseup', _nf._dragUp=()=>{ if(drag){drag=false; stamp.style.cursor='grab';} });
+}
+
+function nfApplyDragSim(){
+  // guarda la posición como FÓRMULA relativa (para servir a otros PDFs) y pasa a modo avanzado
+  const s=_nf._sim, p=_nf.design.params||{};
+  const x=s.curX, y=s.curY;
+  // fórmula: si está cerca del borde derecho, usar ancho - margen; si no, valor directo
+  const distRight=s.pdfW-(x+(p.stamp_w||400));
+  const fx = (distRight < x) ? `ancho - ${Math.round(s.pdfW - x)}` : `${x}`;
+  const distTop=s.pdfH-(y+(p.stamp_h||120));
+  const fy = (distTop < y) ? `alto - ${Math.round(s.pdfH - y)}` : `${y}`;
+  _nf.fx=fx; _nf.fy=fy; _nf.adv=true;
+  // refrescar la UI de posición a modo avanzado con las fórmulas
+  document.getElementById('nf-possimple').style.display='none';
+  document.getElementById('nf-posadv').style.display='block';
+  document.getElementById('nf-advtoggle').classList.add('on');
+  document.getElementById('nf-fx').value=fx;
+  document.getElementById('nf-fy').value=fy;
+  nfResolveFormulas();
+  nfCloseDragSim();
+}
+
+function nfCloseDragSim(){
+  if(_nf&&_nf._dragMove) window.removeEventListener('mousemove',_nf._dragMove);
+  if(_nf&&_nf._dragUp) window.removeEventListener('mouseup',_nf._dragUp);
+  const ov=document.getElementById('dragsim-ov'); if(ov) ov.remove();
 }
 
 function closeNuevo(){ drawer.classList.remove('wide'); closeDrawer(); _nf=null; }
