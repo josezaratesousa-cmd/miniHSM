@@ -106,12 +106,13 @@ class PollingSigner(signers.Signer):
     credential_id != None -> firma con una credencial CUSTODIADA del chip (su cert
     publico lo aporta el cliente); el secreto (passphrase/TOTP) viaja en 'auth' opaco."""
 
-    def __init__(self, device_id: str, credential_id=None, auth=None, custody_cert_pem=None):
+    def __init__(self, device_id: str, credential_id=None, auth=None, custody_cert_pem=None, fingerprint=None):
         self.device_id = device_id
         self.credential_id = credential_id
         self.auth = auth
+        self.fingerprint = fingerprint
         store = SimpleCertificateStore()
-        if credential_id is not None:
+        if credential_id is not None or fingerprint:
             if not custody_cert_pem:
                 raise ValueError("credential_id requiere credential_cert (PEM del cert custodiado)")
             super().__init__(signing_cert=_load_cert_pem(custody_cert_pem), cert_registry=store)
@@ -131,7 +132,7 @@ class PollingSigner(signers.Signer):
             raise NotImplementedError(
                 f"el miniHSM (curva P-256) solo soporta SHA-256; se solicito {digest_algorithm}")
         digest = hashlib.sha256(data).hexdigest()
-        rid = job_queue.enqueue(self.device_id, digest, self.credential_id, self.auth, self._sig_type)
+        rid = job_queue.enqueue(self.device_id, digest, self.credential_id, self.auth, self._sig_type, fingerprint=self.fingerprint)
         waited = 0
         while waited < SIGN_TIMEOUT:
             await asyncio.sleep(POLL_INTERVAL)
@@ -312,9 +313,10 @@ async def sign_pdf_bytes(
     credential_id: int | None = None,    # slot de credencial custodiada (None = clave del device)
     credential_cert: str | None = None,  # PEM del cert custodiado (publico) si credential_id
     auth: str | None = None,             # blob opaco (passphrase/TOTP cifrados para el chip)
+    fingerprint: str | None = None,      # agente: el chip resuelve el slot por fingerprint
 ) -> bytes:
     signer = PollingSigner(device_id, credential_id=credential_id,
-                           auth=auth, custody_cert_pem=credential_cert)
+                           auth=auth, custody_cert_pem=credential_cert, fingerprint=fingerprint)
     w = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes), strict=False)
 
     field_name = _unique_field_name(w)   # unico -> habilita firmas multiples

@@ -77,6 +77,7 @@ async def sign_pdf(
     credential_id: int = Form(None),           # CUSTODIA: slot de credencial (None = clave del device)
     credential_cert: str = Form(None),         # PEM del cert custodiado (publico) si credential_id
     auth:          str = Form(None),            # blob opaco (passphrase/TOTP cifrados para el chip)
+    fingerprint:   str = Form(None),            # agente: el chip resuelve el slot por fingerprint
     stamp_image:   UploadFile = File(None),
 ):
     pdf_bytes = await file.read()
@@ -121,7 +122,7 @@ async def sign_pdf(
         border=border, border_width=border_width,
         fill_opacity=fill_opacity, fill_color=fill_color,
         certify=(mode == "certify"), certify_level=certify_level, tsa_url=tsa_url,
-        credential_id=credential_id, credential_cert=credential_cert, auth=auth,
+        credential_id=credential_id, credential_cert=credential_cert, auth=auth, fingerprint=fingerprint,
     )
     pid = pdf_jobs.create(file.filename or "documento.pdf")
     asyncio.create_task(_run(pid, pdf_bytes, dev, kwargs))
